@@ -1,4 +1,4 @@
-# main.py - VERSÃO COM SQLITE FALLBACK
+# main.py - VERSÃO COMPLETA E FUNCIONAL COM API REAL
 # =============================================================================
 
 import os
@@ -36,7 +36,7 @@ CORS(app)
 def health_urgente():
     return jsonify({
         'status': 'ok',
-        'mensagem': 'Sistema Online',
+        'mensagem': 'Sistema Online - API Real',
         'timestamp': time.time(),
         'versao': '10.0',
         'total_rodadas': cache.get('leves', {}).get('total_rodadas', 0)
@@ -71,134 +71,56 @@ except Exception as e:
     ML_AVAILABLE = False
 
 # =============================================================================
-# CONFIGURAÇÕES - DATABASE (PostgreSQL ou SQLite)
+# CONFIGURAÇÕES - DATABASE (SQLite local)
 # =============================================================================
-USE_SQLITE = False
 DB_CONNECTION = None
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-
-if DATABASE_URL:
-    try:
-        import pg8000
-        import ssl
-        parsed = urllib.parse.urlparse(DATABASE_URL)
-        DB_USER = parsed.username
-        DB_PASSWORD = parsed.password
-        DB_HOST = parsed.hostname
-        DB_PORT = parsed.port or 5432
-        DB_NAME = parsed.path[1:]
-        SSL_CONTEXT = ssl.create_default_context()
-        SSL_CONTEXT.check_hostname = False
-        SSL_CONTEXT.verify_mode = ssl.CERT_NONE
-        print("✅ Configurado para PostgreSQL")
-    except:
-        USE_SQLITE = True
-        print("⚠️ PostgreSQL falhou, usando SQLite")
-else:
-    USE_SQLITE = True
-    print("📁 Usando SQLite local")
-
-# =============================================================================
-# FUNÇÕES DE BANCO DE DADOS (PostgreSQL ou SQLite)
-# =============================================================================
 
 def get_db_connection():
     global DB_CONNECTION
-    if USE_SQLITE:
-        if DB_CONNECTION is None:
-            DB_CONNECTION = sqlite3.connect('bacbo.db', check_same_thread=False)
-            DB_CONNECTION.row_factory = sqlite3.Row
-        return DB_CONNECTION
-    else:
-        try:
-            import pg8000
-            import ssl
-            conn = pg8000.connect(
-                user=DB_USER,
-                password=DB_PASSWORD,
-                host=DB_HOST,
-                port=DB_PORT,
-                database=DB_NAME,
-                ssl_context=SSL_CONTEXT,
-                timeout=30
-            )
-            return conn
-        except Exception as e:
-            print(f"⚠️ Erro PostgreSQL: {e}")
-            return None
+    if DB_CONNECTION is None:
+        DB_CONNECTION = sqlite3.connect('bacbo.db', check_same_thread=False)
+        DB_CONNECTION.row_factory = sqlite3.Row
+    return DB_CONNECTION
 
 def init_db():
     conn = get_db_connection()
-    if not conn:
-        print("⚠️ Banco não disponível")
-        return False
     try:
         cur = conn.cursor()
         
-        if USE_SQLITE:
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS rodadas (
-                    id TEXT PRIMARY KEY,
-                    data_hora TIMESTAMP,
-                    player_score INTEGER,
-                    banker_score INTEGER,
-                    soma INTEGER,
-                    resultado TEXT,
-                    fonte TEXT,
-                    dados_json TEXT
-                )
-            ''')
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS historico_previsoes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    previsao TEXT,
-                    simbolo TEXT,
-                    confianca INTEGER,
-                    resultado_real TEXT,
-                    acertou BOOLEAN,
-                    estrategias TEXT,
-                    modo TEXT,
-                    total_agentes INTEGER,
-                    geracao INTEGER
-                )
-            ''')
-        else:
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS rodadas (
-                    id TEXT PRIMARY KEY,
-                    data_hora TIMESTAMPTZ,
-                    player_score INTEGER,
-                    banker_score INTEGER,
-                    soma INTEGER,
-                    resultado TEXT,
-                    fonte TEXT,
-                    dados_json JSONB
-                )
-            ''')
-            cur.execute('CREATE INDEX IF NOT EXISTS idx_data_hora ON rodadas(data_hora DESC)')
-            cur.execute('CREATE INDEX IF NOT EXISTS idx_resultado ON rodadas(resultado)')
-            
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS historico_previsoes (
-                    id SERIAL PRIMARY KEY,
-                    data_hora TIMESTAMPTZ DEFAULT NOW(),
-                    previsao TEXT,
-                    simbolo TEXT,
-                    confianca INTEGER,
-                    resultado_real TEXT,
-                    acertou BOOLEAN,
-                    estrategias TEXT,
-                    modo TEXT,
-                    total_agentes INTEGER,
-                    geracao INTEGER
-                )
-            ''')
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS rodadas (
+                id TEXT PRIMARY KEY,
+                data_hora TIMESTAMP,
+                player_score INTEGER,
+                banker_score INTEGER,
+                soma INTEGER,
+                resultado TEXT,
+                fonte TEXT,
+                dados_json TEXT
+            )
+        ''')
+        cur.execute('CREATE INDEX IF NOT EXISTS idx_data_hora ON rodadas(data_hora DESC)')
+        cur.execute('CREATE INDEX IF NOT EXISTS idx_resultado ON rodadas(resultado)')
+        
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS historico_previsoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                previsao TEXT,
+                simbolo TEXT,
+                confianca INTEGER,
+                resultado_real TEXT,
+                acertou BOOLEAN,
+                estrategias TEXT,
+                modo TEXT,
+                total_agentes INTEGER,
+                geracao INTEGER
+            )
+        ''')
         
         conn.commit()
         cur.close()
-        print(f"✅ Tabelas OK ({'SQLite' if USE_SQLITE else 'PostgreSQL'})")
+        print("✅ Tabelas SQLite OK")
         return True
     except Exception as e:
         print(f"❌ Erro tabelas: {e}")
@@ -206,94 +128,53 @@ def init_db():
 
 def salvar_rodada(rodada, fonte):
     conn = get_db_connection()
-    if not conn:
-        return False
     try:
         cur = conn.cursor()
-        
-        if USE_SQLITE:
-            cur.execute('''
-                INSERT OR IGNORE INTO rodadas 
-                (id, data_hora, player_score, banker_score, soma, resultado, fonte, dados_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                rodada['id'],
-                rodada['data_hora'],
-                rodada['player_score'],
-                rodada['banker_score'],
-                rodada['player_score'] + rodada['banker_score'],
-                rodada['resultado'],
-                fonte,
-                json.dumps(rodada, default=str)
-            ))
-        else:
-            cur.execute('''
-                INSERT INTO rodadas 
-                (id, data_hora, player_score, banker_score, soma, resultado, fonte, dados_json)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO NOTHING
-            ''', (
-                rodada['id'],
-                rodada['data_hora'],
-                rodada['player_score'],
-                rodada['banker_score'],
-                rodada['player_score'] + rodada['banker_score'],
-                rodada['resultado'],
-                fonte,
-                json.dumps(rodada, default=str)
-            ))
-        
+        cur.execute('''
+            INSERT OR IGNORE INTO rodadas 
+            (id, data_hora, player_score, banker_score, soma, resultado, fonte, dados_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            rodada['id'],
+            rodada['data_hora'].isoformat(),
+            rodada['player_score'],
+            rodada['banker_score'],
+            rodada['player_score'] + rodada['banker_score'],
+            rodada['resultado'],
+            fonte,
+            json.dumps(rodada, default=str)
+        ))
         conn.commit()
         cur.close()
         return True
     except Exception as e:
-        print(f"⚠️ Erro salvar: {e}")
+        print(f"⚠️ Erro salvar rodada: {e}")
         return False
 
 def salvar_previsao(previsao, resultado_real, acertou, total_agentes, geracao):
     conn = get_db_connection()
-    if not conn:
-        return False
     try:
         cur = conn.cursor()
         
         estrategias_str = ','.join(previsao.get('estrategias', []))[:500]
         
-        if USE_SQLITE:
-            cur.execute('''
-                INSERT INTO historico_previsoes 
-                (data_hora, previsao, simbolo, confianca, resultado_real, acertou, 
-                 estrategias, modo, total_agentes, geracao)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                datetime.now(),
-                previsao['previsao'],
-                previsao.get('simbolo', '🔴' if previsao['previsao'] == 'BANKER' else '🔵'),
-                previsao['confianca'],
-                resultado_real,
-                acertou,
-                estrategias_str,
-                previsao.get('modo', 'ENSEMBLE_EVOLUTIVO'),
-                total_agentes,
-                geracao
-            ))
-        else:
-            cur.execute('''
-                INSERT INTO historico_previsoes 
-                (data_hora, previsao, simbolo, confianca, resultado_real, acertou, 
-                 estrategias, modo, total_agentes, geracao)
-                VALUES (NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (
-                previsao['previsao'],
-                previsao.get('simbolo', '🔴' if previsao['previsao'] == 'BANKER' else '🔵'),
-                previsao['confianca'],
-                resultado_real,
-                acertou,
-                estrategias_str,
-                previsao.get('modo', 'ENSEMBLE_EVOLUTIVO'),
-                total_agentes,
-                geracao
-            ))
+        cur.execute('''
+            INSERT INTO historico_previsoes 
+            (data_hora, previsao, simbolo, confianca, resultado_real, acertou, 
+             estrategias, modo, total_agentes, geracao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            datetime.now().isoformat(),
+            previsao['previsao'],
+            previsao.get('simbolo', '🔴' if previsao['previsao'] == 'BANKER' else '🔵'),
+            previsao['confianca'],
+            resultado_real,
+            acertou,
+            estrategias_str,
+            previsao.get('modo', 'ENSEMBLE_EVOLUTIVO'),
+            total_agentes,
+            geracao
+        ))
         
         conn.commit()
         cur.close()
@@ -303,241 +184,41 @@ def salvar_previsao(previsao, resultado_real, acertou, total_agentes, geracao):
         return False
 
 # =============================================================================
-# GERAR RODADAS DE TESTE
+# CONFIGURAÇÕES DA API REAL
 # =============================================================================
-
-def gerar_rodada_teste():
-    global ultimo_id_latest
-    
-    novo_id = f"teste_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
-    
-    player_score = random.randint(2, 12)
-    banker_score = random.randint(2, 12)
-    
-    if player_score > banker_score:
-        resultado = 'PLAYER'
-    elif banker_score > player_score:
-        resultado = 'BANKER'
-    else:
-        resultado = 'TIE'
-    
-    rodada = {
-        'id': novo_id,
-        'data_hora': datetime.now(timezone.utc),
-        'player_score': player_score,
-        'banker_score': banker_score,
-        'resultado': resultado
-    }
-    
-    return rodada
-
-# =============================================================================
-# CARGA HISTÓRICA
-# =============================================================================
-
-def carregar_rodadas_passadas():
-    print("\n" + "="*80)
-    print("📥 CARREGANDO RODADAS")
-    print("="*80)
-    
-    total = 0
-    
-    # Tentar API real
-    try:
-        API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo"
-        HEADERS = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-        }
-        params = {
-            'page': 0,
-            'size': 50,
-            'sort': 'data.settledAt,desc',
-            '_t': int(time.time() * 1000)
-        }
-        
-        print("📡 Tentando API...", end=' ')
-        response = requests.get(API_URL, params=params, headers=HEADERS, timeout=10)
-        
-        if response.status_code == 200:
-            dados = response.json()
-            if dados and len(dados) > 0:
-                for item in dados[:30]:
-                    try:
-                        data = item.get('data', {})
-                        result = data.get('result', {})
-                        
-                        player_dice = result.get('playerDice', {})
-                        banker_dice = result.get('bankerDice', {})
-                        player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
-                        banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
-                        
-                        outcome = result.get('outcome', '')
-                        if outcome == 'PlayerWon':
-                            resultado = 'PLAYER'
-                        elif outcome == 'BankerWon':
-                            resultado = 'BANKER'
-                        else:
-                            resultado = 'TIE'
-                        
-                        settled_at = data.get('settledAt', '')
-                        if settled_at:
-                            data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
-                        else:
-                            data_hora = datetime.now(timezone.utc)
-                        
-                        rodada = {
-                            'id': data.get('id'),
-                            'data_hora': data_hora,
-                            'player_score': player_score,
-                            'banker_score': banker_score,
-                            'resultado': resultado
-                        }
-                        
-                        if salvar_rodada(rodada, 'historico'):
-                            total += 1
-                            
-                    except:
-                        continue
-                print(f"✅ {total} rodadas da API")
-            else:
-                print("⚠️ API sem dados")
-        else:
-            print(f"❌ Status {response.status_code}")
-    except Exception as e:
-        print(f"❌ API erro: {e}")
-    
-    # Gerar dados de teste se necessário
-    if total < 30:
-        print("📊 Gerando dados de teste...")
-        for i in range(50):
-            rodada = gerar_rodada_teste()
-            if salvar_rodada(rodada, 'teste'):
-                total += 1
-                if (i + 1) % 10 == 0:
-                    print(f"   Geradas {i + 1} rodadas...")
-        print(f"✅ Geradas {total} rodadas de teste")
-    
-    print("="*80)
-    print(f"✅ TOTAL: {total} rodadas")
-    print("="*80)
-    return total
-
-# =============================================================================
-# ATUALIZAR DADOS
-# =============================================================================
-
-def atualizar_dados_leves():
-    conn = get_db_connection()
-    if not conn:
-        return
-    try:
-        cur = conn.cursor()
-        
-        if USE_SQLITE:
-            cur.execute('SELECT COUNT(*) FROM rodadas')
-        else:
-            cur.execute('SELECT COUNT(*) FROM rodadas')
-        total = cur.fetchone()[0]
-        cache['leves']['total_rodadas'] = total
-        
-        if USE_SQLITE:
-            cur.execute('SELECT player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 50')
-        else:
-            cur.execute('SELECT player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 50')
-        rows = cur.fetchall()
-        cache['leves']['ultimas_50'] = [{'player_score': r[0], 'banker_score': r[1], 'resultado': r[2]} for r in rows]
-        
-        if USE_SQLITE:
-            cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 20')
-        else:
-            cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 20')
-        rows = cur.fetchall()
-        ultimas = []
-        for row in rows:
-            if USE_SQLITE:
-                data_hora = datetime.fromisoformat(row[0])
-            else:
-                data_hora = row[0]
-            brasilia = data_hora.astimezone(timezone(timedelta(hours=-3)))
-            cor = '🔴' if row[3] == 'BANKER' else '🔵' if row[3] == 'PLAYER' else '🟡'
-            ultimas.append({
-                'hora': brasilia.strftime('%H:%M:%S'),
-                'resultado': row[3],
-                'cor': cor,
-                'player': row[1],
-                'banker': row[2]
-            })
-        cache['leves']['ultimas_20'] = ultimas
-        cache['leves']['ultima_atualizacao'] = datetime.now(timezone.utc)
-        
-        cur.close()
-        print(f"📊 Atualizado: {total} rodadas", end='\r')
-    except Exception as e:
-        print(f"⚠️ Erro: {e}")
-
-def atualizar_dados_pesados():
-    conn = get_db_connection()
-    if not conn:
-        return
-    try:
-        cur = conn.cursor()
-        agora = datetime.now(timezone.utc)
-        periodos = {
-            '10min': agora - timedelta(minutes=10),
-            '1h': agora - timedelta(hours=1),
-            '6h': agora - timedelta(hours=6),
-            '12h': agora - timedelta(hours=12),
-            '24h': agora - timedelta(hours=24),
-            '48h': agora - timedelta(hours=48),
-            '72h': agora - timedelta(hours=72)
-        }
-        for nome, limite in periodos.items():
-            if USE_SQLITE:
-                cur.execute('SELECT COUNT(*) FROM rodadas WHERE data_hora >= ?', (limite,))
-            else:
-                cur.execute('SELECT COUNT(*) FROM rodadas WHERE data_hora >= %s', (limite,))
-            cache['pesados']['periodos'][nome] = cur.fetchone()[0]
-        cur.close()
-        cache['pesados']['ultima_atualizacao'] = datetime.now(timezone.utc)
-    except Exception as e:
-        print(f"⚠️ Erro periodos: {e}")
-
-# =============================================================================
-# LOOP PESADO
-# =============================================================================
-
-def loop_pesado():
-    print("🔄 Loop pesado iniciado")
-    while True:
-        time.sleep(0.1)
-        try:
-            atualizar_dados_pesados()
-        except Exception as e:
-            print(f"❌ Erro loop: {e}")
-
-# =============================================================================
-# COLETA DE DADOS
-# =============================================================================
-
 LATEST_API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo/latest"
 API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo"
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'application/json',
-    'Cache-Control': 'no-cache'
-}
-INTERVALO_LATEST = 0.3
 
+# HEADERS COMPLETOS (como um navegador real)
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Origin': 'https://www.casino.org',
+    'Referer': 'https://www.casino.org/',
+    'Connection': 'keep-alive',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache'
+}
+
+INTERVALO_LATEST = 0.3
 ultimo_id_latest = None
 
+# =============================================================================
+# BUSCAR RODADA ATUAL (API LATEST)
+# =============================================================================
+
 def buscar_latest():
+    """Busca a última rodada da API real"""
     global ultimo_id_latest
     try:
-        response = requests.get(LATEST_API_URL, headers=HEADERS, timeout=2)
+        response = requests.get(LATEST_API_URL, headers=HEADERS, timeout=5)
+        
         if response.status_code == 200:
             dados = response.json()
             novo_id = dados.get('id')
+            
             if novo_id and novo_id != ultimo_id_latest:
                 ultimo_id_latest = novo_id
                 data = dados.get('data', {})
@@ -556,21 +237,33 @@ def buscar_latest():
                 else:
                     resultado = 'TIE'
                 
+                settled_at = data.get('settledAt', '')
+                if settled_at:
+                    try:
+                        data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
+                    except:
+                        data_hora = datetime.now(timezone.utc)
+                else:
+                    data_hora = datetime.now(timezone.utc)
+                
                 rodada = {
                     'id': novo_id,
-                    'data_hora': datetime.now(timezone.utc),
+                    'data_hora': data_hora,
                     'player_score': player_score,
                     'banker_score': banker_score,
                     'resultado': resultado
                 }
-                print(f"📡 LATEST: {player_score} vs {banker_score} - {resultado}")
+                
+                print(f"\n📡 [API REAL] {player_score} vs {banker_score} - {resultado}")
                 return rodada
         return None
     except Exception as e:
+        print(f"⚠️ Erro na API: {e}")
         return None
 
 def loop_latest():
-    print("📡 Coletor LATEST iniciado")
+    """Loop principal de coleta da API real"""
+    print("📡 Coletor API REAL iniciado (intervalo 0.3s)...")
     while True:
         try:
             rodada = buscar_latest()
@@ -578,10 +271,182 @@ def loop_latest():
                 fila_rodadas.append(rodada)
             time.sleep(INTERVALO_LATEST)
         except Exception as e:
+            print(f"❌ Erro no coletor: {e}")
             time.sleep(1)
 
 # =============================================================================
-# CACHE
+# CARREGAR HISTÓRICO DA API NORMAL
+# =============================================================================
+
+def carregar_historico_api():
+    """Carrega rodadas históricas da API normal"""
+    print("\n" + "="*80)
+    print("📥 CARREGANDO HISTÓRICO DA API REAL")
+    print("="*80)
+    
+    total = 0
+    pagina = 0
+    max_paginas = 10
+    
+    while pagina < max_paginas:
+        try:
+            params = {
+                'page': pagina,
+                'size': 100,
+                'sort': 'data.settledAt,desc',
+                '_t': int(time.time() * 1000)
+            }
+            
+            print(f"📡 Página {pagina}...", end=' ')
+            response = requests.get(API_URL, params=params, headers=HEADERS, timeout=15)
+            
+            if response.status_code != 200:
+                print(f"❌ Status {response.status_code}")
+                break
+            
+            dados = response.json()
+            if not dados or len(dados) == 0:
+                print("⚠️ Sem dados")
+                break
+            
+            novas = 0
+            for item in dados:
+                try:
+                    data = item.get('data', {})
+                    result = data.get('result', {})
+                    
+                    player_dice = result.get('playerDice', {})
+                    banker_dice = result.get('bankerDice', {})
+                    player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
+                    banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
+                    
+                    outcome = result.get('outcome', '')
+                    if outcome == 'PlayerWon':
+                        resultado = 'PLAYER'
+                    elif outcome == 'BankerWon':
+                        resultado = 'BANKER'
+                    else:
+                        resultado = 'TIE'
+                    
+                    settled_at = data.get('settledAt', '')
+                    if settled_at:
+                        data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
+                    else:
+                        data_hora = datetime.now(timezone.utc)
+                    
+                    rodada = {
+                        'id': data.get('id'),
+                        'data_hora': data_hora,
+                        'player_score': player_score,
+                        'banker_score': banker_score,
+                        'resultado': resultado
+                    }
+                    
+                    if salvar_rodada(rodada, 'historico'):
+                        novas += 1
+                        total += 1
+                        
+                except Exception as e:
+                    continue
+            
+            print(f"✅ +{novas} rodadas")
+            
+            if novas == 0:
+                break
+                
+            pagina += 1
+            time.sleep(0.5)
+            
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+            break
+    
+    print("="*80)
+    print(f"✅ TOTAL HISTÓRICO: {total} rodadas")
+    print("="*80)
+    return total
+
+# =============================================================================
+# ATUALIZAR DADOS DO BANCO
+# =============================================================================
+
+def atualizar_dados_leves():
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        
+        # Total de rodadas
+        cur.execute('SELECT COUNT(*) FROM rodadas')
+        total = cur.fetchone()[0]
+        cache['leves']['total_rodadas'] = total
+        
+        # Últimas 50
+        cur.execute('SELECT player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 50')
+        rows = cur.fetchall()
+        cache['leves']['ultimas_50'] = [{'player_score': r[0], 'banker_score': r[1], 'resultado': r[2]} for r in rows]
+        
+        # Últimas 20 para o frontend
+        cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 20')
+        rows = cur.fetchall()
+        ultimas = []
+        for row in rows:
+            data_hora = datetime.fromisoformat(row[0])
+            brasilia = data_hora.astimezone(timezone(timedelta(hours=-3)))
+            cor = '🔴' if row[3] == 'BANKER' else '🔵' if row[3] == 'PLAYER' else '🟡'
+            ultimas.append({
+                'hora': brasilia.strftime('%H:%M:%S'),
+                'resultado': row[3],
+                'cor': cor,
+                'player': row[1],
+                'banker': row[2]
+            })
+        cache['leves']['ultimas_20'] = ultimas
+        cache['leves']['ultima_atualizacao'] = datetime.now(timezone.utc)
+        
+        cur.close()
+        if total > 0:
+            print(f"📊 Banco: {total} rodadas", end='\r')
+            
+    except Exception as e:
+        print(f"⚠️ Erro: {e}")
+
+def atualizar_dados_pesados():
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        agora = datetime.now(timezone.utc)
+        periodos = {
+            '10min': (agora - timedelta(minutes=10)).isoformat(),
+            '1h': (agora - timedelta(hours=1)).isoformat(),
+            '6h': (agora - timedelta(hours=6)).isoformat(),
+            '12h': (agora - timedelta(hours=12)).isoformat(),
+            '24h': (agora - timedelta(hours=24)).isoformat(),
+            '48h': (agora - timedelta(hours=48)).isoformat(),
+            '72h': (agora - timedelta(hours=72)).isoformat()
+        }
+        for nome, limite in periodos.items():
+            cur.execute('SELECT COUNT(*) FROM rodadas WHERE data_hora >= ?', (limite,))
+            cache['pesados']['periodos'][nome] = cur.fetchone()[0]
+        cur.close()
+        cache['pesados']['ultima_atualizacao'] = datetime.now(timezone.utc)
+    except Exception as e:
+        print(f"⚠️ Erro periodos: {e}")
+
+# =============================================================================
+# LOOP PESADO
+# =============================================================================
+
+def loop_pesado():
+    print("🔄 Loop pesado iniciado")
+    while True:
+        time.sleep(0.1)
+        try:
+            atualizar_dados_pesados()
+        except Exception as e:
+            pass
+
+# =============================================================================
+# CACHE GLOBAL
 # =============================================================================
 cache = {
     'leves': {
@@ -627,9 +492,9 @@ def processar_fila():
                 fila_rodadas.clear()
                 
                 for rodada in batch:
-                    if salvar_rodada(rodada, 'principal'):
+                    if salvar_rodada(rodada, 'api_real'):
                         historico_buffer.append(rodada)
-                        print(f"✅ SALVO: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Buffer: {len(historico_buffer)}")
+                        print(f"💾 SALVA: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Buffer: {len(historico_buffer)}")
                         
                         if ultima_previsao_feita:
                             resultado_real = rodada['resultado']
@@ -690,7 +555,7 @@ def processar_fila():
                     
                     atualizar_dados_leves()
             
-            time.sleep(0.1)
+            time.sleep(0.01)
             
         except Exception as e:
             print(f"❌ Erro processador: {e}")
@@ -749,24 +614,16 @@ def api_stats():
 def api_tabela(limite):
     limite = min(max(limite, 50), 2000)
     conn = get_db_connection()
-    if not conn:
-        return jsonify([])
     
     try:
         cur = conn.cursor()
-        if USE_SQLITE:
-            cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT ?', (limite,))
-        else:
-            cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT %s', (limite,))
+        cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT ?', (limite,))
         rows = cur.fetchall()
         cur.close()
         
         resultado = []
         for row in rows:
-            if USE_SQLITE:
-                data_hora = datetime.fromisoformat(row[0])
-            else:
-                data_hora = row[0]
+            data_hora = datetime.fromisoformat(row[0])
             brasilia = data_hora.astimezone(timezone(timedelta(hours=-3)))
             resultado.append({
                 'data': brasilia.strftime('%d/%m %H:%M:%S'),
@@ -818,7 +675,8 @@ def inicializar_sistema():
 
 if __name__ == "__main__":
     print("="*80)
-    print("🚀 BACBO PREDICTOR - VERSÃO ESTÁVEL")
+    print("🚀 BACBO PREDICTOR - API REAL AO VIVO")
+    print("   Coletando dados da API em tempo real!")
     print("="*80)
     
     # Criar diretórios
@@ -828,14 +686,14 @@ if __name__ == "__main__":
     # Inicializar banco
     init_db()
     
-    # Carregar rodadas
-    total_passadas = carregar_rodadas_passadas()
+    # Carregar histórico da API real
+    total_historico = carregar_historico_api()
     
     # Atualizar dados
     atualizar_dados_leves()
     atualizar_dados_pesados()
     
-    print(f"\n📊 TOTAL: {cache['leves']['total_rodadas']} rodadas no banco")
+    print(f"\n📊 TOTAL NO BANCO: {cache['leves']['total_rodadas']} rodadas")
     
     # Inicializar sistema
     inicializar_sistema()
@@ -847,7 +705,7 @@ if __name__ == "__main__":
     
     def loop_atualizacao_leves():
         while True:
-            time.sleep(30)
+            time.sleep(10)
             atualizar_dados_leves()
     threading.Thread(target=loop_atualizacao_leves, daemon=True).start()
     
@@ -855,6 +713,7 @@ if __name__ == "__main__":
     print("\n" + "="*80)
     print(f"🚀 FLASK NA PORTA {PORT}")
     print(f"🎯 http://localhost:{PORT}")
+    print("🎯 Coletando dados da API REAL em tempo real (0.3s)")
     print("="*80)
     
     app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
