@@ -498,6 +498,28 @@
             border-radius: 8px;
             text-align: center;
             font-size: 12px;
+            transition: all 0.2s;
+        }
+        
+        .numero-item:hover {
+            transform: translateY(-2px);
+            border-color: #4d4dff;
+        }
+
+        /* Cores separadas por resultado */
+        .numero-player {
+            border-left: 4px solid #4d4dff;
+            background: #4d4dff10;
+        }
+        
+        .numero-banker {
+            border-left: 4px solid #ff4d4d;
+            background: #ff4d4d10;
+        }
+        
+        .numero-tie {
+            border-left: 4px solid #ffaa00;
+            background: #ffaa0010;
         }
 
         .limite-buttons {
@@ -801,41 +823,42 @@
                 <!-- Distribuição Cards -->
                 <div class="distribuicao-grid">
                     <div class="distribuicao-card" onclick="setFiltro('player')">
-                        <div class="distribuicao-numero player-color" id="playerNumero">-</div>
+                        <div class="distribuicao-numero player-color" id="playerNumero">0</div>
                         <div class="distribuicao-label">PLAYER</div>
-                        <div class="distribuicao-percent player-color" id="playerPercent">-</div>
+                        <div class="distribuicao-percent player-color" id="playerPercent">0%</div>
                     </div>
                     <div class="distribuicao-card" onclick="setFiltro('tie')">
-                        <div class="distribuicao-numero tie-color" id="tieNumero">-</div>
+                        <div class="distribuicao-numero tie-color" id="tieNumero">0</div>
                         <div class="distribuicao-label">TIE</div>
-                        <div class="distribuicao-percent tie-color" id="tiePercent">-</div>
+                        <div class="distribuicao-percent tie-color" id="tiePercent">0%</div>
                     </div>
                     <div class="distribuicao-card" onclick="setFiltro('banker')">
-                        <div class="distribuicao-numero banker-color" id="bankerNumero">-</div>
+                        <div class="distribuicao-numero banker-color" id="bankerNumero">0</div>
                         <div class="distribuicao-label">BANKER</div>
-                        <div class="distribuicao-percent banker-color" id="bankerPercent">-</div>
+                        <div class="distribuicao-percent banker-color" id="bankerPercent">0%</div>
                     </div>
                 </div>
 
-                <!-- Botões de Limite -->
+                <!-- Botões de Limite (mantidos para filtro) -->
                 <div class="limite-buttons">
-                    <button class="limite-btn active" onclick="carregarTabelaCache(50)">50</button>
-                    <button class="limite-btn" onclick="carregarTabelaCache(250)">250</button>
-                    <button class="limite-btn" onclick="carregarTabelaCache(500)">500</button>
-                    <button class="limite-btn" onclick="carregarTabelaCache(1000)">1K</button>
-                    <button class="limite-btn" onclick="carregarTabelaCache(2000)">2K</button>
+                    <button class="limite-btn active" data-limite="50">50</button>
+                    <button class="limite-btn" data-limite="250">250</button>
+                    <button class="limite-btn" data-limite="500">500</button>
+                    <button class="limite-btn" data-limite="1000">1K</button>
+                    <button class="limite-btn" data-limite="2000">2K</button>
                 </div>
 
-                <!-- Tabela de Rodadas -->
+                <!-- Tabela de Rodadas (CARREGA AUTOMATICAMENTE) -->
                 <div class="card">
                     <div class="card-title">
                         <i class="bi bi-table"></i>
-                        Histórico <span class="cache-indicator">(cache)</span>
+                        HISTÓRICO DE RODADAS
+                        <span class="cache-indicator">(atualizado automaticamente)</span>
                         <span class="badge bg-secondary ms-2" id="tabelaCount">0</span>
                         <span class="info-badge" id="filtroAtivo">todas</span>
                     </div>
                     <div class="numeros-grid" id="numerosGrid">
-                        <div class="loading">Carregando...</div>
+                        <div class="loading">Carregando histórico...</div>
                     </div>
                 </div>
             </div>
@@ -848,7 +871,7 @@
     // =========================================================================
     const CONFIG = {
         INTERVALO_ATUALIZACAO: 3000,
-        LIMITE_PADRAO: 50
+        LIMITE_PADRAO: 100  // Carrega 100 rodadas automaticamente
     };
 
     let evolucaoChart = null;
@@ -861,7 +884,7 @@
     let ordemTabela = { coluna: 'precisao', direcao: 'desc' };
     let dadosEspecialistas = [];
     
-    let cacheTabela = { dados: null, timestamp: 0, limite: 50 };
+    let cacheTabela = { dados: null, timestamp: 0, limite: 100 };
 
     // =========================================================================
     // FUNÇÕES AUXILIARES
@@ -932,7 +955,7 @@
     // =========================================================================
     function atualizarTabelaEspecialistas(especialistas) {
         if (!especialistas || especialistas.length === 0) {
-            document.getElementById('agentesTableBody').innerHTML = '<tr><td colspan="7">Nenhum especialista</td></tr>';
+            document.getElementById('agentesTableBody').innerHTML = '拉斯<td colspan="7">Nenhum especialista</td>拉斯';
             return;
         }
 
@@ -964,15 +987,17 @@
             else forcaBaixa++;
             
             const forcaClass = precisao >= 70 ? 'forca-alta' : (precisao >= 50 ? 'forca-media' : 'forca-baixa');
-            html += `<tr>
-                <td class="agente-nome">${e.nome}</td>
-                <td>${e.acertos}</td>
-                <td>${e.erros}</td>
-                <td class="${forcaClass}">${precisao.toFixed(1)}%</td>
-                <td class="agente-peso">${(e.peso || 1).toFixed(3)}</td>
-                <td>${e.padrao || '-'}</td>
-                <td><span class="agente-geracao">${e.geracao || 0}</span></td>
-            </tr>`;
+            html += `
+                <tr>
+                    <td class="agente-nome">${e.nome}</td>
+                    <td>${e.acertos}</td>
+                    <td>${e.erros}</td>
+                    <td class="${forcaClass}">${precisao.toFixed(1)}%</td>
+                    <td class="agente-peso">${(e.peso || 1).toFixed(3)}</td>
+                    <td>${e.padrao || '-'}</td>
+                    <td><span class="agente-geracao">${e.geracao || 0}</span></td>
+                </tr>
+            `;
         });
 
         document.getElementById('agentesTableBody').innerHTML = html;
@@ -1008,62 +1033,81 @@
     }
 
     function exibirHistorico(data) {
-        if (!data?.length) { document.getElementById('numerosGrid').innerHTML = '<div class="loading">Sem dados</div>'; return; }
+        if (!data?.length) { 
+            document.getElementById('numerosGrid').innerHTML = '<div class="loading">Nenhuma rodada encontrada</div>'; 
+            return; 
+        }
 
         let dados = removerDuplicatas(data);
         if (filtroAtual) dados = dados.filter(r => r.resultado.toLowerCase() === filtroAtual.toLowerCase());
 
         let html = '';
-        dados.slice(0, 100).forEach(item => {
-            const classe = item.resultado === 'PLAYER' ? 'numero-player' : (item.resultado === 'BANKER' ? 'numero-banker' : 'numero-tie');
-            html += `<div class="numero-item ${classe}">
-                <div>${item.player} vs ${item.banker}</div>
-                <div>${item.data || ''}</div>
-                <div>${item.resultado === 'PLAYER' ? '🔵' : (item.resultado === 'BANKER' ? '🔴' : '🟡')}</div>
-            </div>`;
+        dados.slice(0, 200).forEach(item => {
+            const classe = item.resultado === 'PLAYER' ? 'numero-player' : 
+                          (item.resultado === 'BANKER' ? 'numero-banker' : 'numero-tie');
+            const simbolo = item.resultado === 'PLAYER' ? '🔵' : 
+                           (item.resultado === 'BANKER' ? '🔴' : '🟡');
+            
+            html += `
+                <div class="numero-item ${classe}">
+                    <div><strong>${item.player} vs ${item.banker}</strong></div>
+                    <div style="font-size: 10px; color: #8a8f99;">${item.data || ''}</div>
+                    <div style="font-size: 14px;">${simbolo} ${item.resultado}</div>
+                </div>
+            `;
         });
         document.getElementById('numerosGrid').innerHTML = html;
-    }
-
-    async function carregarTabelaCache(limite) {
-        limiteAtual = limite;
-        document.querySelectorAll('.limite-btn').forEach(btn => btn.classList.remove('active'));
-        event?.target?.classList?.add('active');
         
-        const agora = Date.now();
-        if (cacheTabela.dados && cacheTabela.limite === limite && agora - cacheTabela.timestamp < 60000) {
-            dadosCompletos = cacheTabela.dados;
-            atualizarInterfaceTabela();
-            return;
-        }
-        await carregarTabela(limite);
-    }
-
-    function atualizarInterfaceTabela() {
-        if (!dadosCompletos?.length) return;
-        const player = dadosCompletos.filter(r => r.resultado === 'PLAYER').length;
-        const banker = dadosCompletos.filter(r => r.resultado === 'BANKER').length;
-        const tie = dadosCompletos.filter(r => r.resultado === 'TIE').length;
-        const total = dadosCompletos.length;
+        // Atualizar contador
+        document.getElementById('tabelaCount').textContent = dados.length;
         
-        document.getElementById('tabelaCount').textContent = total;
+        // Atualizar distribuição
+        const player = dados.filter(r => r.resultado === 'PLAYER').length;
+        const banker = dados.filter(r => r.resultado === 'BANKER').length;
+        const tie = dados.filter(r => r.resultado === 'TIE').length;
+        const total = dados.length;
+        
         document.getElementById('playerNumero').textContent = player;
         document.getElementById('bankerNumero').textContent = banker;
         document.getElementById('tieNumero').textContent = tie;
-        if (total) {
-            document.getElementById('playerPercent').textContent = ((player/total)*100).toFixed(1)+'%';
-            document.getElementById('bankerPercent').textContent = ((banker/total)*100).tofixed(1)+'%';
-            document.getElementById('tiePercent').textContent = ((tie/total)*100).toFixed(1)+'%';
+        
+        if (total > 0) {
+            document.getElementById('playerPercent').textContent = ((player/total)*100).toFixed(1) + '%';
+            document.getElementById('bankerPercent').textContent = ((banker/total)*100).toFixed(1) + '%';
+            document.getElementById('tiePercent').textContent = ((tie/total)*100).toFixed(1) + '%';
         }
-        exibirHistorico(dadosCompletos);
     }
 
-    async function carregarTabela(limite) {
+    // Função para carregar tabela automaticamente
+    async function carregarTabelaAutomatica() {
+        try {
+            const res = await fetch(`/api/tabela/200`);
+            const dados = await res.json();
+            dadosCompletos = removerDuplicatas(dados);
+            cacheTabela = { dados: dadosCompletos, timestamp: Date.now(), limite: 200 };
+            exibirHistorico(dadosCompletos);
+        } catch(e) { 
+            console.error('Erro ao carregar histórico:', e);
+            document.getElementById('numerosGrid').innerHTML = '<div class="loading">Erro ao carregar histórico</div>';
+        }
+    }
+
+    // Função para carregar com limite específico (quando clicar nos botões)
+    async function carregarTabelaComLimite(limite) {
         try {
             const res = await fetch(`/api/tabela/${limite}`);
-            dadosCompletos = removerDuplicatas(await res.json());
-            cacheTabela = { dados: dadosCompletos, timestamp: Date.now(), limite };
-            atualizarInterfaceTabela();
+            const dados = await res.json();
+            dadosCompletos = removerDuplicatas(dados);
+            cacheTabela = { dados: dadosCompletos, timestamp: Date.now(), limite: limite };
+            exibirHistorico(dadosCompletos);
+            
+            // Atualizar botão ativo
+            document.querySelectorAll('.limite-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (parseInt(btn.getAttribute('data-limite')) === limite) {
+                    btn.classList.add('active');
+                }
+            });
         } catch(e) { console.error(e); }
     }
 
@@ -1163,18 +1207,33 @@
     // INICIALIZAÇÃO
     // =========================================================================
     document.addEventListener('DOMContentLoaded', () => {
-        console.log('🚀 BacBo Ensemble Evolutivo - Começa com 7 e CRIA NOVOS!');
+        console.log('🚀 BacBo Ensemble Evolutivo - Histórico automático ativado!');
         criarGraficos();
-        setTimeout(() => carregarTabelaCache(50), 100);
+        
+        // CARREGA HISTÓRICO AUTOMATICAMENTE (sem precisar clicar)
+        setTimeout(() => carregarTabelaAutomatica(), 500);
+        
+        // Configurar botões de limite
+        document.querySelectorAll('.limite-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const limite = parseInt(btn.getAttribute('data-limite'));
+                carregarTabelaComLimite(limite);
+            });
+        });
+        
         atualizarRelogio();
         setInterval(atualizarRelogio, 1000);
         setInterval(atualizarTudo, CONFIG.INTERVALO_ATUALIZACAO);
+        
+        // Atualizar histórico periodicamente
+        setInterval(() => carregarTabelaAutomatica(), 10000);
+        
         setTimeout(atualizarTudo, 500);
     });
 
-    window.carregarTabelaCache = carregarTabelaCache;
     window.setFiltro = setFiltro;
     window.ordenarTabela = ordenarTabela;
+    window.carregarTabelaComLimite = carregarTabelaComLimite;
 </script>
 </body>
 </html>
