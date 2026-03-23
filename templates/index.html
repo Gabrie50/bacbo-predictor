@@ -871,7 +871,8 @@
     // =========================================================================
     const CONFIG = {
         INTERVALO_ATUALIZACAO: 3000,
-        LIMITE_PADRAO: 100  // Carrega 100 rodadas automaticamente
+        INTERVALO_HISTORICO: 300,     // 0.3 segundos = 300ms
+        LIMITE_PADRAO: 200            // Carrega 200 rodadas automaticamente
     };
 
     let evolucaoChart = null;
@@ -884,7 +885,7 @@
     let ordemTabela = { coluna: 'precisao', direcao: 'desc' };
     let dadosEspecialistas = [];
     
-    let cacheTabela = { dados: null, timestamp: 0, limite: 100 };
+    let cacheTabela = { dados: null, timestamp: 0, limite: 200 };
 
     // =========================================================================
     // FUNÇÕES AUXILIARES
@@ -1081,10 +1082,10 @@
     // Função para carregar tabela automaticamente
     async function carregarTabelaAutomatica() {
         try {
-            const res = await fetch(`/api/tabela/200`);
+            const res = await fetch(`/api/tabela/${CONFIG.LIMITE_PADRAO}`);
             const dados = await res.json();
             dadosCompletos = removerDuplicatas(dados);
-            cacheTabela = { dados: dadosCompletos, timestamp: Date.now(), limite: 200 };
+            cacheTabela = { dados: dadosCompletos, timestamp: Date.now(), limite: CONFIG.LIMITE_PADRAO };
             exibirHistorico(dadosCompletos);
         } catch(e) { 
             console.error('Erro ao carregar histórico:', e);
@@ -1207,10 +1208,10 @@
     // INICIALIZAÇÃO
     // =========================================================================
     document.addEventListener('DOMContentLoaded', () => {
-        console.log('🚀 BacBo Ensemble Evolutivo - Histórico automático ativado!');
+        console.log('🚀 BacBo Ensemble Evolutivo - Histórico atualiza a cada 0.3s!');
         criarGraficos();
         
-        // CARREGA HISTÓRICO AUTOMATICAMENTE (sem precisar clicar)
+        // CARREGA HISTÓRICO AUTOMATICAMENTE
         setTimeout(() => carregarTabelaAutomatica(), 500);
         
         // Configurar botões de limite
@@ -1225,8 +1226,8 @@
         setInterval(atualizarRelogio, 1000);
         setInterval(atualizarTudo, CONFIG.INTERVALO_ATUALIZACAO);
         
-        // Atualizar histórico periodicamente
-        setInterval(() => carregarTabelaAutomatica(), 10000);
+        // ATUALIZA HISTÓRICO A CADA 0.3 SEGUNDOS (300ms)
+        setInterval(() => carregarTabelaAutomatica(), CONFIG.INTERVALO_HISTORICO);
         
         setTimeout(atualizarTudo, 500);
     });
