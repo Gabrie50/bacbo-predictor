@@ -1,20 +1,18 @@
-# main.py - VERSÃO COMPLETA COM 3 FONTES, LOOP PESADO E CARGA HISTÓRICA
+# main.py - VERSÃO COMPLETA E ESTÁVEL
 # =============================================================================
 
 import os
+import sys
 import time
 import requests
 import json
 import urllib.parse
 import threading
-import websocket
 import random
 from datetime import datetime, timedelta, timezone
 from collections import deque
 from flask import Flask, render_template, jsonify
 from flask_cors import CORS
-import pg8000
-import ssl
 import traceback
 
 # =============================================================================
@@ -37,85 +35,73 @@ CORS(app)
 def health_urgente():
     return jsonify({
         'status': 'ok',
-        'mensagem': 'Ensemble Evolutivo Online',
+        'mensagem': 'Sistema Online',
         'timestamp': time.time(),
-        'versao': '10.0 - Evolutivo',
-        'total_agentes': cache.get('ensemble').get_stats()['total_agentes'] if cache.get('ensemble') else 0,
-        'total_rodadas': cache['leves']['total_rodadas']
+        'versao': '10.0',
+        'total_rodadas': cache.get('leves', {}).get('total_rodadas', 0)
     })
 
 @app.route('/', methods=['GET'])
 def home_rapida():
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        print(f"Erro ao renderizar index: {e}")
+        return jsonify({'erro': 'Template não encontrado'}), 500
 
 @app.route('/mapa-mental')
 def mapa_mental():
-    return render_template('mapa_mental.html')
+    try:
+        return render_template('mapa_mental.html')
+    except Exception as e:
+        return jsonify({'erro': 'Template não encontrado'}), 500
 
 # =============================================================================
-# 🧠 IMPORTAR ENSEMBLE EVOLUTIVO
+# TENTAR IMPORTAR ENSEMBLE
 # =============================================================================
-from app.ml.ensemble import EnsembleEvolutivo
-from app.ml.memory_map import MapaMental
-from app.ml.indicators import BacBoIndicators
+try:
+    from app.ml.ensemble import EnsembleEvolutivo
+    from app.ml.memory_map import MapaMental
+    from app.ml.indicators import BacBoIndicators
+    ML_AVAILABLE = True
+    print("✅ ML modules carregados")
+except Exception as e:
+    print(f"⚠️ Erro ao carregar ML: {e}")
+    ML_AVAILABLE = False
 
 # =============================================================================
 # CONFIGURAÇÕES
 # =============================================================================
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://neondb_owner:npg_uHONl9tJ1gDF@ep-patient-rice-amoqsdum-pooler.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-parsed = urllib.parse.urlparse(DATABASE_URL)
-DB_USER = parsed.username
-DB_PASSWORD = parsed.password
-DB_HOST = parsed.hostname
-DB_PORT = parsed.port or 5432
-DB_NAME = parsed.path[1:]
-
-SSL_CONTEXT = ssl.create_default_context()
-SSL_CONTEXT.check_hostname = False
-SSL_CONTEXT.verify_mode = ssl.CERT_NONE
+if DATABASE_URL:
+    parsed = urllib.parse.urlparse(DATABASE_URL)
+    DB_USER = parsed.username
+    DB_PASSWORD = parsed.password
+    DB_HOST = parsed.hostname
+    DB_PORT = parsed.port or 5432
+    DB_NAME = parsed.path[1:]
+else:
+    DB_USER = None
+    DB_PASSWORD = None
+    DB_HOST = None
+    DB_PORT = None
+    DB_NAME = None
 
 # =============================================================================
-# CONFIGURAÇÕES DAS 3 FONTES
+# CONFIGURAÇÕES DAS FONTES
 # =============================================================================
 LATEST_API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo/latest"
-WS_URL = "wss://api-cs.casino.org/svc-evolution-game-events/ws/bacbo"
 API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo"
 
-# HEADERS COMPLETOS (como um navegador real)
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Origin': 'https://www.casino.org',
-    'Referer': 'https://www.casino.org/',
-    'Connection': 'keep-alive',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
+    'Cache-Control': 'no-cache'
 }
 
-TIMEOUT_API = 5
-INTERVALO_LATEST = 0.2
-INTERVALO_WS_FALLBACK = 3
-INTERVALO_NORMAL_FALLBACK = 10
+INTERVALO_LATEST = 0.3
 PORT = int(os.environ.get("PORT", 5000))
-
-# =============================================================================
-# CONTROLE DE FALHAS
-# =============================================================================
-falhas_latest = 0
-falhas_websocket = 0
-falhas_api_normal = 0
-LIMITE_FALHAS = 10
-
-fontes_status = {
-    'latest': {'status': 'ativo', 'total': 0, 'falhas': 0, 'prioridade': 1},
-    'websocket': {'status': 'standby', 'total': 0, 'falhas': 0, 'prioridade': 2},
-    'api_normal': {'status': 'standby', 'total': 0, 'falhas': 0, 'prioridade': 3}
-}
-
-fonte_ativa = 'latest'
 
 # =============================================================================
 # CACHE GLOBAL
@@ -147,8 +133,6 @@ cache = {
 
 fila_rodadas = deque(maxlen=500)
 ultimo_id_latest = None
-ultimo_id_websocket = None
-ultimo_id_api = None
 
 # =============================================================================
 # FUNÇÕES AUXILIARES
@@ -161,7 +145,15 @@ def calcular_precisao():
     return round((cache['estatisticas']['acertos'] / total) * 100)
 
 def get_db_connection():
+    if not DB_HOST:
+        return None
     try:
+        import pg8000
+        import ssl
+        SSL_CONTEXT = ssl.create_default_context()
+        SSL_CONTEXT.check_hostname = False
+        SSL_CONTEXT.verify_mode = ssl.CERT_NONE
+        
         conn = pg8000.connect(
             user=DB_USER,
             password=DB_PASSWORD,
@@ -173,13 +165,15 @@ def get_db_connection():
         )
         return conn
     except Exception as e:
-        print(f"❌ Erro ao conectar: {e}")
+        print(f"⚠️ Erro banco: {e}")
         return None
 
 def init_db():
+    if not DB_HOST:
+        print("⚠️ Sem banco configurado")
+        return False
     conn = get_db_connection()
     if not conn:
-        print("⚠️ Banco não disponível")
         return False
     try:
         cur = conn.cursor()
@@ -217,10 +211,10 @@ def init_db():
         conn.commit()
         cur.close()
         conn.close()
-        print("✅ Tabelas criadas/verificadas")
+        print("✅ Tabelas OK")
         return True
     except Exception as e:
-        print(f"❌ Erro ao criar tabelas: {e}")
+        print(f"❌ Erro tabelas: {e}")
         return False
 
 def salvar_rodada(rodada, fonte):
@@ -249,49 +243,14 @@ def salvar_rodada(rodada, fonte):
         conn.close()
         return True
     except Exception as e:
-        print(f"⚠️ Erro ao salvar: {e}")
-        return False
-
-def salvar_previsao(previsao, resultado_real, acertou, total_agentes, geracao):
-    conn = get_db_connection()
-    if not conn:
-        return False
-    try:
-        cur = conn.cursor()
-        
-        estrategias_str = ','.join(previsao.get('estrategias', []))[:500]
-        
-        cur.execute('''
-            INSERT INTO historico_previsoes 
-            (data_hora, previsao, simbolo, confianca, resultado_real, acertou, 
-             estrategias, modo, total_agentes, geracao)
-            VALUES (NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (
-            previsao['previsao'],
-            previsao.get('simbolo', '🔴' if previsao['previsao'] == 'BANKER' else '🔵'),
-            previsao['confianca'],
-            resultado_real,
-            acertou,
-            estrategias_str,
-            previsao.get('modo', 'ENSEMBLE_EVOLUTIVO'),
-            total_agentes,
-            geracao
-        ))
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"⚠️ Erro ao salvar previsão: {e}")
+        print(f"⚠️ Erro salvar: {e}")
         return False
 
 # =============================================================================
-# GERAR RODADAS DE TESTE (FALLBACK QUANDO API ESTIVER MORTA)
+# GERAR RODADAS DE TESTE
 # =============================================================================
 
 def gerar_rodada_teste():
-    """Gera uma rodada de teste quando a API não responde"""
     global ultimo_id_latest
     
     novo_id = f"teste_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
@@ -314,325 +273,45 @@ def gerar_rodada_teste():
         'resultado': resultado
     }
     
-    print(f"🧪 [TESTE] Rodada gerada: {player_score} vs {banker_score} - {resultado}")
+    print(f"🧪 TESTE: {player_score} vs {banker_score} - {resultado}")
     return rodada
 
 # =============================================================================
-# CARGA HISTÓRICA DE RODADAS PASSADAS
+# CARGA HISTÓRICA
 # =============================================================================
 
 def carregar_rodadas_passadas():
-    """Carrega rodadas passadas da API normal"""
     print("\n" + "="*80)
-    print("📥 CARREGANDO RODADAS PASSADAS DA API")
+    print("📥 CARREGANDO RODADAS")
     print("="*80)
     
-    total_carregadas = 0
-    pagina = 0
-    max_paginas = 5
+    total = 0
     
-    for pagina in range(max_paginas):
-        try:
-            params = {
-                'page': pagina,
-                'size': 100,
-                'sort': 'data.settledAt,desc',
-                '_t': int(time.time() * 1000)
-            }
-            
-            print(f"📡 Carregando página {pagina}...", end=' ')
-            response = requests.get(API_URL, params=params, headers=HEADERS, timeout=15)
-            
-            if response.status_code != 200:
-                print(f"❌ Status {response.status_code}")
-                continue
-            
-            dados = response.json()
-            if not dados or len(dados) == 0:
-                print("⚠️ Sem dados")
-                continue
-            
-            novas = 0
-            for item in dados:
-                try:
-                    data = item.get('data', {})
-                    result = data.get('result', {})
-                    
-                    player_dice = result.get('playerDice', {})
-                    banker_dice = result.get('bankerDice', {})
-                    player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
-                    banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
-                    
-                    outcome = result.get('outcome', '')
-                    if outcome == 'PlayerWon':
-                        resultado = 'PLAYER'
-                    elif outcome == 'BankerWon':
-                        resultado = 'BANKER'
-                    else:
-                        resultado = 'TIE'
-                    
-                    settled_at = data.get('settledAt', '')
-                    if settled_at:
-                        data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
-                    else:
-                        data_hora = datetime.now(timezone.utc)
-                    
-                    rodada = {
-                        'id': data.get('id'),
-                        'data_hora': data_hora,
-                        'player_score': player_score,
-                        'banker_score': banker_score,
-                        'resultado': resultado
-                    }
-                    
-                    if salvar_rodada(rodada, 'historico'):
-                        novas += 1
-                        total_carregadas += 1
-                        
-                except Exception as e:
-                    continue
-            
-            print(f"✅ +{novas} rodadas")
-            time.sleep(0.5)
-            
-        except Exception as e:
-            print(f"❌ Erro: {e}")
-            continue
-    
-    # Se não carregou nenhuma, gerar dados de teste
-    if total_carregadas == 0:
-        print("\n⚠️ API não respondeu. Gerando dados de teste...")
-        for i in range(100):
-            rodada = gerar_rodada_teste()
-            if salvar_rodada(rodada, 'teste'):
-                total_carregadas += 1
-        print(f"✅ Geradas {total_carregadas} rodadas de teste")
-    
-    print("="*80)
-    print(f"✅ TOTAL CARREGADO: {total_carregadas} rodadas")
-    print("="*80)
-    return total_carregadas
-
-# =============================================================================
-# 🔄 FUNÇÃO PARA ALTERNAR FONTE ATIVA
-# =============================================================================
-def alternar_fonte():
-    global fonte_ativa, falhas_latest, falhas_websocket, falhas_api_normal
-
-    if fonte_ativa == 'latest' and falhas_latest >= LIMITE_FALHAS:
-        print(f"\n⚠️ LATEST falhou {falhas_latest} vezes - Alternando para WEBSOCKET")
-        fonte_ativa = 'websocket'
-        fontes_status['latest']['status'] = 'falha'
-        fontes_status['websocket']['status'] = 'ativo'
-
-    elif fonte_ativa == 'websocket' and falhas_websocket >= LIMITE_FALHAS:
-        print(f"\n⚠️ WEBSOCKET falhou {falhas_websocket} vezes - Alternando para API NORMAL")
-        fonte_ativa = 'api_normal'
-        fontes_status['websocket']['status'] = 'falha'
-        fontes_status['api_normal']['status'] = 'ativo'
-
-    elif fonte_ativa == 'api_normal' and falhas_api_normal >= LIMITE_FALHAS:
-        print(f"\n⚠️ Todas as fontes falharam - Usando gerador de teste")
-        falhas_latest = 0
-        falhas_websocket = 0
-        falhas_api_normal = 0
-        fonte_ativa = 'teste'
-        fontes_status['latest']['status'] = 'teste'
-        fontes_status['websocket']['status'] = 'teste'
-        fontes_status['api_normal']['status'] = 'teste'
-
-# =============================================================================
-# 📡 FONTE 1: API LATEST (INTERVALO 0.2s)
-# =============================================================================
-
-def buscar_latest():
-    global ultimo_id_latest, falhas_latest, fonte_ativa
-
-    try:
-        response = requests.get(LATEST_API_URL, headers=HEADERS, timeout=3)
-
-        if response.status_code == 200:
-            dados = response.json()
-            novo_id = dados.get('id')
-            data = dados.get('data', {})
-            result = data.get('result', {})
-
-            if novo_id and novo_id != ultimo_id_latest:
-                if fonte_ativa == 'latest':
-                    falhas_latest = 0
-
-                ultimo_id_latest = novo_id
-
-                player_dice = result.get('playerDice', {})
-                banker_dice = result.get('bankerDice', {})
-
-                player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
-                banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
-
-                outcome = result.get('outcome', '')
-                if outcome == 'PlayerWon':
-                    resultado = 'PLAYER'
-                elif outcome == 'BankerWon':
-                    resultado = 'BANKER'
-                else:
-                    resultado = 'TIE'
-
-                rodada = {
-                    'id': novo_id,
-                    'data_hora': datetime.now(timezone.utc),
-                    'player_score': player_score,
-                    'banker_score': banker_score,
-                    'resultado': resultado
-                }
-
-                fontes_status['latest']['total'] += 1
-                print(f"\n📡 [PRINCIPAL] LATEST: {player_score} vs {banker_score} - {resultado}")
-                return rodada
-            else:
-                return None
-        else:
-            if fonte_ativa == 'latest':
-                falhas_latest += 1
-                fontes_status['latest']['falhas'] += 1
-                print(f"⚠️ LATEST falha {falhas_latest}/{LIMITE_FALHAS} (Status: {response.status_code})")
-                if falhas_latest >= LIMITE_FALHAS:
-                    alternar_fonte()
-            return None
-
-    except Exception as e:
-        if fonte_ativa == 'latest':
-            falhas_latest += 1
-            fontes_status['latest']['falhas'] += 1
-            print(f"⚠️ LATEST erro: {e} - falha {falhas_latest}/{LIMITE_FALHAS}")
-            if falhas_latest >= LIMITE_FALHAS:
-                alternar_fonte()
-        return None
-
-# =============================================================================
-# 📡 FONTE 2: WEBSOCKET
-# =============================================================================
-
-def on_ws_message(ws, message):
-    global ultimo_id_websocket, falhas_websocket, fonte_ativa
-
-    try:
-        data = json.loads(message)
-
-        if 'data' in data and 'result' in data['data']:
-            game_data = data['data']
-            result = game_data['result']
-            novo_id = game_data.get('id')
-
-            if novo_id and novo_id != ultimo_id_websocket:
-                if fonte_ativa == 'websocket':
-                    falhas_websocket = 0
-
-                ultimo_id_websocket = novo_id
-
-                player_dice = result.get('playerDice', {})
-                banker_dice = result.get('bankerDice', {})
-
-                player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
-                banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
-
-                outcome = result.get('outcome', '')
-                if outcome == 'PlayerWon':
-                    resultado = 'PLAYER'
-                elif outcome == 'BankerWon':
-                    resultado = 'BANKER'
-                else:
-                    resultado = 'TIE'
-
-                rodada = {
-                    'id': novo_id,
-                    'data_hora': datetime.now(timezone.utc),
-                    'player_score': player_score,
-                    'banker_score': banker_score,
-                    'resultado': resultado
-                }
-
-                fontes_status['websocket']['total'] += 1
-
-                if fonte_ativa == 'websocket':
-                    fila_rodadas.append(rodada)
-                    print(f"\n⚡ [BACKUP] WEBSOCKET: {player_score} vs {banker_score} - {resultado}")
-
-    except Exception as e:
-        print(f"⚠️ Erro WS: {e}")
-
-def on_ws_error(ws, error):
-    global falhas_websocket, fonte_ativa
-    if fonte_ativa == 'websocket':
-        falhas_websocket += 1
-        fontes_status['websocket']['falhas'] += 1
-        print(f"🔌 WS Erro: {error} - falha {falhas_websocket}/{LIMITE_FALHAS}")
-        if falhas_websocket >= LIMITE_FALHAS:
-            alternar_fonte()
-
-def on_ws_close(ws, close_status_code, close_msg):
-    global falhas_websocket, fonte_ativa
-    if fonte_ativa == 'websocket':
-        falhas_websocket += 1
-        fontes_status['websocket']['falhas'] += 1
-        print(f"🔌 WS Fechado - falha {falhas_websocket}/{LIMITE_FALHAS}")
-        if falhas_websocket >= LIMITE_FALHAS:
-            alternar_fonte()
-    time.sleep(5)
-    iniciar_websocket()
-
-def on_ws_open(ws):
-    global falhas_websocket, fonte_ativa
-    print("✅ WEBSOCKET CONECTADO! (modo backup)")
-    if fonte_ativa == 'websocket':
-        falhas_websocket = 0
-
-def iniciar_websocket():
-    def run():
-        ws = websocket.WebSocketApp(
-            WS_URL,
-            on_open=on_ws_open,
-            on_message=on_ws_message,
-            on_error=on_ws_error,
-            on_close=on_ws_close
-        )
-        ws.run_forever()
-
-    threading.Thread(target=run, daemon=True).start()
-
-# =============================================================================
-# 📡 FONTE 3: API NORMAL (FALLBACK)
-# =============================================================================
-
-def buscar_api_normal():
-    global ultimo_id_api, falhas_api_normal, fonte_ativa
-
+    # Tentar API
     try:
         params = {
             'page': 0,
-            'size': 100,
+            'size': 50,
             'sort': 'data.settledAt,desc',
             '_t': int(time.time() * 1000)
         }
-
-        response = requests.get(API_URL, params=params, headers=HEADERS, timeout=TIMEOUT_API)
+        
+        print("📡 Tentando API...", end=' ')
+        response = requests.get(API_URL, params=params, headers=HEADERS, timeout=10)
         
         if response.status_code == 200:
             dados = response.json()
             if dados and len(dados) > 0:
-                if fonte_ativa == 'api_normal':
-                    falhas_api_normal = 0
-
-                rodadas = []
-                for item in dados[:20]:
+                for item in dados[:30]:
                     try:
                         data = item.get('data', {})
                         result = data.get('result', {})
+                        
                         player_dice = result.get('playerDice', {})
                         banker_dice = result.get('bankerDice', {})
-
                         player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
                         banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
-
+                        
                         outcome = result.get('outcome', '')
                         if outcome == 'PlayerWon':
                             resultado = 'PLAYER'
@@ -640,13 +319,13 @@ def buscar_api_normal():
                             resultado = 'BANKER'
                         else:
                             resultado = 'TIE'
-
+                        
                         settled_at = data.get('settledAt', '')
                         if settled_at:
                             data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
                         else:
                             data_hora = datetime.now(timezone.utc)
-
+                        
                         rodada = {
                             'id': data.get('id'),
                             'data_hora': data_hora,
@@ -654,82 +333,33 @@ def buscar_api_normal():
                             'banker_score': banker_score,
                             'resultado': resultado
                         }
-                        rodadas.append(rodada)
+                        
+                        if salvar_rodada(rodada, 'historico'):
+                            total += 1
+                            
                     except:
                         continue
-
-                fontes_status['api_normal']['total'] += len(rodadas)
-
-                if fonte_ativa == 'api_normal':
-                    print(f"\n📚 [FALLBACK] API NORMAL: {len(rodadas)} rodadas")
-                    return rodadas
-
-        return None
-
+                print(f"✅ {total} rodadas da API")
+            else:
+                print("⚠️ API sem dados")
+        else:
+            print(f"❌ Status {response.status_code}")
     except Exception as e:
-        if fonte_ativa == 'api_normal':
-            falhas_api_normal += 1
-            fontes_status['api_normal']['falhas'] += 1
-            print(f"⚠️ API Normal erro - falha {falhas_api_normal}/{LIMITE_FALHAS}")
-            if falhas_api_normal >= LIMITE_FALHAS:
-                alternar_fonte()
-        return None
-
-# =============================================================================
-# 📡 FONTE 4: GERADOR DE TESTE
-# =============================================================================
-
-def buscar_teste():
-    global fonte_ativa
-    if fonte_ativa == 'teste':
-        rodada = gerar_rodada_teste()
-        return rodada
-    return None
-
-# =============================================================================
-# LOOPS DE COLETA
-# =============================================================================
-
-def loop_latest():
-    print("📡 [PRINCIPAL] Coletor LATEST iniciado (0.2s)...")
-    while True:
-        try:
-            rodada = None
-            if fonte_ativa == 'latest':
-                rodada = buscar_latest()
-            elif fonte_ativa == 'teste':
-                rodada = buscar_teste()
-                time.sleep(1)
-            
-            if rodada:
-                fila_rodadas.append(rodada)
-            time.sleep(INTERVALO_LATEST)
-        except Exception as e:
-            print(f"❌ Erro no loop LATEST: {e}")
-            time.sleep(INTERVALO_LATEST)
-
-def loop_websocket_fallback():
-    print("⚡ [BACKUP] Monitor WebSocket iniciado...")
-    while True:
-        try:
-            time.sleep(1)
-        except Exception as e:
-            print(f"❌ Erro no monitor WS: {e}")
-            time.sleep(1)
-
-def loop_api_fallback():
-    print("📚 [FALLBACK] Coletor API NORMAL iniciado (10s)...")
-    while True:
-        try:
-            if fonte_ativa == 'api_normal':
-                rodadas = buscar_api_normal()
-                if rodadas:
-                    for rodada in rodadas:
-                        fila_rodadas.append(rodada)
-            time.sleep(INTERVALO_NORMAL_FALLBACK)
-        except Exception as e:
-            print(f"❌ Erro API Normal: {e}")
-            time.sleep(INTERVALO_NORMAL_FALLBACK)
+        print(f"❌ API erro: {e}")
+    
+    # Gerar dados de teste
+    if total < 30:
+        print("📊 Gerando dados de teste...")
+        for i in range(50):
+            rodada = gerar_rodada_teste()
+            if salvar_rodada(rodada, 'teste'):
+                total += 1
+        print(f"✅ Geradas {total} rodadas")
+    
+    print("="*80)
+    print(f"✅ TOTAL: {total} rodadas")
+    print("="*80)
+    return total
 
 # =============================================================================
 # ATUALIZAR DADOS
@@ -768,9 +398,9 @@ def atualizar_dados_leves():
         
         cur.close()
         conn.close()
-        print(f"📊 Dados atualizados: {total} rodadas")
+        print(f"📊 Atualizado: {total} rodadas")
     except Exception as e:
-        print(f"⚠️ Erro atualizar dados: {e}")
+        print(f"⚠️ Erro: {e}")
 
 def atualizar_dados_pesados():
     conn = get_db_connection()
@@ -802,20 +432,75 @@ def atualizar_dados_pesados():
 # =============================================================================
 
 def loop_pesado():
-    print("🔄 [PESADO] Loop de atualização iniciado...")
+    print("🔄 Loop pesado iniciado")
     while True:
         time.sleep(0.1)
         try:
             atualizar_dados_pesados()
         except Exception as e:
-            print(f"❌ Erro loop pesado: {e}")
+            print(f"❌ Erro loop: {e}")
 
 # =============================================================================
-# PROCESSADOR DE FILA COM ENSEMBLE
+# COLETA DE DADOS
+# =============================================================================
+
+def buscar_latest():
+    global ultimo_id_latest
+    try:
+        response = requests.get(LATEST_API_URL, headers=HEADERS, timeout=2)
+        if response.status_code == 200:
+            dados = response.json()
+            novo_id = dados.get('id')
+            if novo_id and novo_id != ultimo_id_latest:
+                ultimo_id_latest = novo_id
+                data = dados.get('data', {})
+                result = data.get('result', {})
+                
+                player_dice = result.get('playerDice', {})
+                banker_dice = result.get('bankerDice', {})
+                player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
+                banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
+                
+                outcome = result.get('outcome', '')
+                if outcome == 'PlayerWon':
+                    resultado = 'PLAYER'
+                elif outcome == 'BankerWon':
+                    resultado = 'BANKER'
+                else:
+                    resultado = 'TIE'
+                
+                rodada = {
+                    'id': novo_id,
+                    'data_hora': datetime.now(timezone.utc),
+                    'player_score': player_score,
+                    'banker_score': banker_score,
+                    'resultado': resultado
+                }
+                print(f"📡 LATEST: {player_score} vs {banker_score} - {resultado}")
+                return rodada
+        return None
+    except Exception as e:
+        print(f"⚠️ LATEST erro: {e}")
+        return None
+
+def loop_latest():
+    print("📡 Coletor LATEST iniciado")
+    while True:
+        try:
+            rodada = buscar_latest()
+            if rodada:
+                fila_rodadas.append(rodada)
+            time.sleep(INTERVALO_LATEST)
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+            time.sleep(1)
+
+# =============================================================================
+# PROCESSADOR DE FILA
 # =============================================================================
 
 def processar_fila():
-    print("🚀 Processador ENSEMBLE EVOLUTIVO iniciado...")
+    print("🚀 Processador iniciado")
     
     historico_buffer = []
     ultima_previsao_feita = None
@@ -827,34 +512,20 @@ def processar_fila():
                 fila_rodadas.clear()
                 
                 for rodada in batch:
-                    if salvar_rodada(rodada, fonte_ativa):
+                    if salvar_rodada(rodada, 'principal'):
                         historico_buffer.append(rodada)
-                        cache['ultimo_resultado_real'] = rodada['resultado']
-                        print(f"✅ SALVO: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Buffer: {len(historico_buffer)}")
+                        print(f"✅ SALVO: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Total: {len(historico_buffer)}")
                         
                         if ultima_previsao_feita:
                             resultado_real = rodada['resultado']
                             if resultado_real != 'TIE':
                                 acertou = (ultima_previsao_feita['previsao'] == resultado_real)
                                 
-                                print(f"\n📊 PREVISÃO ANTERIOR: {ultima_previsao_feita['previsao']} | Real: {resultado_real} | {'✅' if acertou else '❌'}")
-                                
-                                salvar_previsao(
-                                    ultima_previsao_feita, 
-                                    resultado_real, 
-                                    acertou,
-                                    ultima_previsao_feita.get('total_agentes', 0),
-                                    ultima_previsao_feita.get('geracao', 0)
-                                )
-                                
                                 cache['estatisticas']['total_previsoes'] += 1
                                 if acertou:
                                     cache['estatisticas']['acertos'] += 1
                                 else:
                                     cache['estatisticas']['erros'] += 1
-                                
-                                if cache.get('ensemble'):
-                                    cache['ensemble'].aprender(resultado_real)
                                 
                                 cache['estatisticas']['ultimas_20_previsoes'].insert(0, {
                                     'data': datetime.now().strftime('%d/%m %H:%M:%S'),
@@ -876,9 +547,7 @@ def processar_fila():
                             
                             ultima_previsao_feita = None
                         
-                        if len(historico_buffer) >= 30 and cache.get('ensemble') and ultima_previsao_feita is None:
-                            print(f"\n🔮 FAZENDO PREVISÃO COM {len(historico_buffer)} rodadas...")
-                            
+                        if len(historico_buffer) >= 30 and ML_AVAILABLE and cache.get('ensemble') and ultima_previsao_feita is None:
                             historico_completo = []
                             for r in historico_buffer[-50:]:
                                 historico_completo.append({
@@ -887,78 +556,57 @@ def processar_fila():
                                     'resultado': r['resultado']
                                 })
                             
-                            previsao = cache['ensemble'].prever(historico_completo)
-                            
-                            if previsao['previsao'] != 'AGUARDANDO':
-                                ultima_previsao_feita = {
-                                    'modo': previsao['modo'],
-                                    'previsao': previsao['previsao'],
-                                    'simbolo': previsao['simbolo'],
-                                    'confianca': previsao['confianca'],
-                                    'estrategias': previsao.get('estrategias', []),
-                                    'total_agentes': previsao.get('total_agentes', 0),
-                                    'geracao': previsao.get('geracao', 0)
-                                }
-                                cache['leves']['previsao'] = ultima_previsao_feita
-                                print(f"   ✅ PREVISÃO: {ultima_previsao_feita['previsao']} com {ultima_previsao_feita['confianca']}%")
-                                print(f"   📊 Estratégias: {ultima_previsao_feita['estrategias'][:3]}")
+                            try:
+                                previsao = cache['ensemble'].prever(historico_completo)
+                                if previsao['previsao'] != 'AGUARDANDO':
+                                    ultima_previsao_feita = {
+                                        'modo': previsao['modo'],
+                                        'previsao': previsao['previsao'],
+                                        'simbolo': previsao['simbolo'],
+                                        'confianca': previsao['confianca'],
+                                        'estrategias': previsao.get('estrategias', []),
+                                        'total_agentes': previsao.get('total_agentes', 0),
+                                        'geracao': previsao.get('geracao', 0)
+                                    }
+                                    cache['leves']['previsao'] = ultima_previsao_feita
+                                    print(f"   ✅ PREVISÃO: {ultima_previsao_feita['previsao']} com {ultima_previsao_feita['confianca']}%")
+                            except Exception as e:
+                                print(f"⚠️ Erro previsão: {e}")
                     
                     atualizar_dados_leves()
             
             time.sleep(0.1)
             
         except Exception as e:
-            print(f"❌ Erro no processador: {e}")
+            print(f"❌ Erro processador: {e}")
             traceback.print_exc()
             time.sleep(0.5)
 
 # =============================================================================
-# ROTAS DA API
+# ROTAS API
 # =============================================================================
 
 @app.route('/api/stats')
 def api_stats():
-    stats_ensemble = cache['ensemble'].get_stats() if cache.get('ensemble') else {}
-    
-    especialistas_formatados = []
-    if stats_ensemble.get('especialistas'):
-        for esp in stats_ensemble['especialistas']:
-            especialistas_formatados.append({
-                'nome': esp['nome'],
-                'acertos': esp['acertos'],
-                'erros': esp['erros'],
-                'precisao': esp['precisao'],
-                'peso': esp['peso'],
-                'saude': 100,
-                'fitness': esp['precisao'],
-                'especialidade': esp.get('padrao', esp.get('especialidade', '-')),
-                'geracao': esp.get('geracao', 0)
-            })
-    
     return jsonify({
         'ultima_atualizacao': cache['leves']['ultima_atualizacao'].strftime('%d/%m %H:%M:%S') if cache['leves']['ultima_atualizacao'] else None,
         'total_rodadas': cache['leves']['total_rodadas'],
         'ultimas_20': cache['leves']['ultimas_20'],
         'previsao': cache['leves']['previsao'],
         'periodos': cache['pesados']['periodos'],
-        'fonte_ativa': fonte_ativa,
-        'fontes': fontes_status,
         'estatisticas': {
             'total_previsoes': cache['estatisticas']['total_previsoes'],
             'acertos': cache['estatisticas']['acertos'],
             'erros': cache['estatisticas']['erros'],
             'precisao': calcular_precisao(),
             'ultimas_20_previsoes': cache['estatisticas']['ultimas_20_previsoes'],
-            'estrategias': especialistas_formatados
-        },
-        'aprendizado': stats_ensemble,
-        'total_agentes': stats_ensemble.get('total_agentes', 0),
-        'geracao': stats_ensemble.get('evolucao', {}).get('geracao_atual', 0)
+            'estrategias': []
+        }
     })
 
 @app.route('/api/tabela/<int:limite>')
 def api_tabela(limite):
-    limite = min(max(limite, 50), 3000)
+    limite = min(max(limite, 50), 2000)
     conn = get_db_connection()
     if not conn:
         return jsonify([])
@@ -984,24 +632,14 @@ def api_tabela(limite):
         return jsonify(resultado)
         
     except Exception as e:
-        print(f"❌ Erro em api_tabela: {e}")
+        print(f"❌ Erro tabela: {e}")
         return jsonify([])
 
 @app.route('/api/aprendizado')
 def api_aprendizado():
-    if cache.get('ensemble'):
+    if ML_AVAILABLE and cache.get('ensemble'):
         return jsonify(cache['ensemble'].get_stats())
-    return jsonify({'erro': 'Ensemble não inicializado'})
-
-@app.route('/api/curto-prazo')
-def api_curto_prazo():
-    stats = cache['ensemble'].get_stats() if cache.get('ensemble') else {}
-    return jsonify({
-        'status': 'ativo',
-        'estatisticas': {
-            'precisao': stats.get('precisao', 0)
-        }
-    })
+    return jsonify({'status': 'inativo'})
 
 # =============================================================================
 # INICIALIZAÇÃO
@@ -1009,18 +647,22 @@ def api_curto_prazo():
 
 def inicializar_sistema():
     print("\n" + "="*80)
-    print("🚀 INICIALIZANDO BACBO - ENSEMBLE EVOLUTIVO")
+    print("🚀 INICIALIZANDO SISTEMA")
     print("="*80)
     
-    cache['indicadores'] = BacBoIndicators()
-    cache['mapa_mental'] = MapaMental()
-    cache['ensemble'] = EnsembleEvolutivo()
+    if ML_AVAILABLE:
+        try:
+            cache['indicadores'] = BacBoIndicators()
+            cache['mapa_mental'] = MapaMental()
+            cache['ensemble'] = EnsembleEvolutivo()
+            stats = cache['ensemble'].get_stats()
+            print(f"✅ Ensemble: {stats['total_agentes']} especialistas")
+        except Exception as e:
+            print(f"⚠️ Erro ensemble: {e}")
+            cache['ensemble'] = None
+    else:
+        print("⚠️ ML não disponível")
     
-    stats = cache['ensemble'].get_stats()
-    
-    print("\n✅ Sistema inicializado com sucesso!")
-    print(f"   🧠 {stats['total_agentes']} especialistas")
-    print(f"   🗺️ Mapa mental: {stats['mapa_mental']['total']} memórias")
     print("="*80)
 
 # =============================================================================
@@ -1029,33 +671,32 @@ def inicializar_sistema():
 
 if __name__ == "__main__":
     print("="*80)
-    print("🚀 BACBO PREDICTOR - ENSEMBLE EVOLUTIVO v10.0")
-    print("   Começa com 7 especialistas e CRIA NOVOS conforme aprende!")
+    print("🚀 BACBO PREDICTOR - VERSÃO ESTÁVEL")
     print("="*80)
     
+    # Criar diretórios
+    os.makedirs('templates', exist_ok=True)
+    os.makedirs('static', exist_ok=True)
+    
+    # Inicializar banco
     init_db()
     
-    total_passadas = carregar_rodadas_passadas()
+    # Carregar rodadas
+    carregar_rodadas_passadas()
     
+    # Atualizar dados
     atualizar_dados_leves()
     atualizar_dados_pesados()
     
-    print(f"\n📊 TOTAL DE RODADAS NO BANCO: {cache['leves']['total_rodadas']}")
+    print(f"\n📊 TOTAL: {cache['leves']['total_rodadas']} rodadas")
     
-    if total_passadas == 0:
-        print("\n⚠️ Nenhuma rodada passada carregada!")
-        print("   O sistema vai aguardar novas rodadas via LATEST...")
-    else:
-        print(f"\n✅ {total_passadas} rodadas carregadas com sucesso!")
-    
+    # Inicializar sistema
     inicializar_sistema()
     
+    # Iniciar threads
     threading.Thread(target=loop_latest, daemon=True).start()
-    threading.Thread(target=loop_websocket_fallback, daemon=True).start()
-    threading.Thread(target=loop_api_fallback, daemon=True).start()
     threading.Thread(target=processar_fila, daemon=True).start()
     threading.Thread(target=loop_pesado, daemon=True).start()
-    threading.Thread(target=iniciar_websocket, daemon=True).start()
     
     def loop_atualizacao_leves():
         while True:
@@ -1064,10 +705,8 @@ if __name__ == "__main__":
     threading.Thread(target=loop_atualizacao_leves, daemon=True).start()
     
     print("\n" + "="*80)
-    print("🚀 FLASK INICIANDO...")
-    print("🎯 3 FONTES ATIVAS: LATEST (0.2s) | WEBSOCKET | API NORMAL")
-    print("🎯 LOOP PESADO ATIVO")
-    print(f"🎯 Acesse: http://localhost:{PORT}")
+    print(f"🚀 FLASK NA PORTA {PORT}")
+    print(f"🎯 http://localhost:{PORT}")
     print("="*80)
     
     app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
