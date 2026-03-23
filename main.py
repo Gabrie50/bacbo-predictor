@@ -1,4 +1,4 @@
-# main.py - VERSÃO COMPLETA COM CARGA DE DADOS HISTÓRICOS
+# main.py - VERSÃO COMPLETA COM CARGA FORÇADA DE DADOS
 # =============================================================================
 
 import os
@@ -39,7 +39,8 @@ def health_urgente():
         'mensagem': 'Ensemble Evolutivo Online',
         'timestamp': time.time(),
         'versao': '10.0 - Evolutivo',
-        'total_agentes': cache.get('ensemble').get_stats()['total_agentes'] if cache.get('ensemble') else 0
+        'total_agentes': cache.get('ensemble').get_stats()['total_agentes'] if cache.get('ensemble') else 0,
+        'total_rodadas': cache['leves']['total_rodadas']
     })
 
 @app.route('/', methods=['GET'])
@@ -86,7 +87,7 @@ HEADERS = {
     'Cache-Control': 'no-cache'
 }
 
-INTERVALO_LATEST = 1
+INTERVALO_LATEST = 2
 PORT = int(os.environ.get("PORT", 5000))
 
 # =============================================================================
@@ -120,7 +121,6 @@ cache = {
 # Fila de rodadas
 fila_rodadas = deque(maxlen=500)
 ultimo_id_latest = None
-ultimo_id_api = None
 
 # =============================================================================
 # FUNÇÕES AUXILIARES
@@ -181,7 +181,6 @@ def init_db():
                 acertou BOOLEAN,
                 estrategias TEXT,
                 modo TEXT,
-                contexto_json JSONB,
                 total_agentes INTEGER,
                 geracao INTEGER
             )
@@ -225,52 +224,21 @@ def salvar_rodada(rodada, fonte):
         print(f"⚠️ Erro ao salvar: {e}")
         return False
 
-def salvar_previsao(previsao, resultado_real, acertou, contexto, total_agentes, geracao):
-    conn = get_db_connection()
-    if not conn:
-        return False
-    try:
-        cur = conn.cursor()
-        
-        estrategias_str = ','.join(previsao.get('estrategias', []))[:500]
-        
-        cur.execute('''
-            INSERT INTO historico_previsoes 
-            (data_hora, previsao, simbolo, confianca, resultado_real, acertou, 
-             estrategias, modo, total_agentes, geracao)
-            VALUES (NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (
-            previsao['previsao'],
-            previsao.get('simbolo', '🔴' if previsao['previsao'] == 'BANKER' else '🔵'),
-            previsao['confianca'],
-            resultado_real,
-            acertou,
-            estrategias_str,
-            previsao.get('modo', 'ENSEMBLE_EVOLUTIVO'),
-            total_agentes,
-            geracao
-        ))
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"⚠️ Erro ao salvar previsão: {e}")
-        return False
-
 # =============================================================================
-# CARGA DE DADOS HISTÓRICOS
+# CARGA DE DADOS HISTÓRICOS FORÇADA
 # =============================================================================
 
-def carregar_historico_api():
-    """Carrega dados históricos da API"""
-    print("\n📚 CARREGANDO DADOS HISTÓRICOS DA API...")
+def carregar_historico_completo():
+    """Carrega o máximo de dados históricos possíveis"""
+    print("\n" + "="*80)
+    print("📥 CARREGANDO DADOS HISTÓRICOS DA API")
+    print("="*80)
     
-    total_carregadas = 0
+    total = 0
     pagina = 0
+    max_paginas = 20  # 2000 rodadas
     
-    while pagina < 10:  # Carrega até 10 páginas (1000 rodadas)
+    while pagina < max_paginas:
         try:
             params = {
                 'page': pagina,
@@ -279,81 +247,83 @@ def carregar_historico_api():
                 '_t': int(time.time() * 1000)
             }
             
+            print(f"📡 Carregando página {pagina}...", end=' ')
             response = requests.get(API_URL, params=params, headers=HEADERS, timeout=15)
             
-            if response.status_code == 200:
-                dados = response.json()
-                
-                if not dados or len(dados) == 0:
-                    break
-                
-                novas = 0
-                for item in dados:
-                    try:
-                        data = item.get('data', {})
-                        result = data.get('result', {})
-                        
-                        player_dice = result.get('playerDice', {})
-                        banker_dice = result.get('bankerDice', {})
-                        player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
-                        banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
-                        
-                        outcome = result.get('outcome', '')
-                        if outcome == 'PlayerWon':
-                            resultado = 'PLAYER'
-                        elif outcome == 'BankerWon':
-                            resultado = 'BANKER'
-                        else:
-                            resultado = 'TIE'
-                        
-                        settled_at = data.get('settledAt', '')
-                        if settled_at:
-                            data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
-                        else:
-                            data_hora = datetime.now(timezone.utc)
-                        
-                        rodada = {
-                            'id': data.get('id'),
-                            'data_hora': data_hora,
-                            'player_score': player_score,
-                            'banker_score': banker_score,
-                            'resultado': resultado
-                        }
-                        
-                        if salvar_rodada(rodada, 'historico'):
-                            novas += 1
-                            total_carregadas += 1
-                            
-                    except Exception as e:
-                        continue
-                
-                print(f"   Página {pagina}: +{novas} rodadas")
-                
-                if novas == 0:
-                    break
+            if response.status_code != 200:
+                print(f"❌ Status {response.status_code}")
+                break
+            
+            dados = response.json()
+            if not dados or len(dados) == 0:
+                print("⚠️ Sem dados")
+                break
+            
+            novas = 0
+            for item in dados:
+                try:
+                    data = item.get('data', {})
+                    result = data.get('result', {})
                     
-                pagina += 1
-                time.sleep(0.5)
-                
-            else:
-                print(f"   ⚠️ Página {pagina} retornou status {response.status_code}")
+                    player_dice = result.get('playerDice', {})
+                    banker_dice = result.get('bankerDice', {})
+                    player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
+                    banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
+                    
+                    outcome = result.get('outcome', '')
+                    if outcome == 'PlayerWon':
+                        resultado = 'PLAYER'
+                    elif outcome == 'BankerWon':
+                        resultado = 'BANKER'
+                    else:
+                        resultado = 'TIE'
+                    
+                    settled_at = data.get('settledAt', '')
+                    if settled_at:
+                        data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
+                    else:
+                        data_hora = datetime.now(timezone.utc)
+                    
+                    rodada = {
+                        'id': data.get('id'),
+                        'data_hora': data_hora,
+                        'player_score': player_score,
+                        'banker_score': banker_score,
+                        'resultado': resultado
+                    }
+                    
+                    if salvar_rodada(rodada, 'historico'):
+                        novas += 1
+                        total += 1
+                        
+                except Exception as e:
+                    continue
+            
+            print(f"✅ +{novas} rodadas (Total: {total})")
+            
+            if novas == 0:
                 break
                 
+            pagina += 1
+            time.sleep(0.5)
+            
         except Exception as e:
-            print(f"   ⚠️ Erro na página {pagina}: {e}")
+            print(f"❌ Erro: {e}")
             break
     
-    print(f"✅ Total carregado: {total_carregadas} rodadas")
-    return total_carregadas
+    print("="*80)
+    print(f"✅ TOTAL CARREGADO: {total} rodadas")
+    print("="*80)
+    return total
 
 # =============================================================================
-# COLETA DE DADOS EM TEMPO REAL
+# COLETA EM TEMPO REAL
 # =============================================================================
 
 def buscar_latest():
     global ultimo_id_latest
     try:
-        response = requests.get(LATEST_API_URL, headers=HEADERS, timeout=3)
+        response = requests.get(LATEST_API_URL, headers=HEADERS, timeout=5)
         
         if response.status_code == 200:
             dados = response.json()
@@ -407,18 +377,23 @@ def loop_latest():
 # ATUALIZAR DADOS DO BANCO
 # =============================================================================
 
-def atualizar_dados_leves():
+def atualizar_dados():
+    """Atualiza todos os dados do cache"""
     conn = get_db_connection()
     if not conn:
         return
+    
     try:
         cur = conn.cursor()
+        
+        # Total de rodadas
+        cur.execute('SELECT COUNT(*) FROM rodadas')
+        cache['leves']['total_rodadas'] = cur.fetchone()[0]
+        
+        # Últimas 50 para estatísticas
         cur.execute('SELECT player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 50')
         rows = cur.fetchall()
         cache['leves']['ultimas_50'] = [{'player_score': r[0], 'banker_score': r[1], 'resultado': r[2]} for r in rows]
-        
-        cur.execute('SELECT COUNT(*) FROM rodadas')
-        cache['leves']['total_rodadas'] = cur.fetchone()[0]
         
         # Últimas 20 para o frontend
         cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 20')
@@ -436,17 +411,7 @@ def atualizar_dados_leves():
             })
         cache['leves']['ultimas_20'] = ultimas
         
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"⚠️ Erro atualizar dados: {e}")
-
-def atualizar_dados_pesados():
-    conn = get_db_connection()
-    if not conn:
-        return
-    try:
-        cur = conn.cursor()
+        # Períodos
         agora = datetime.now(timezone.utc)
         periodos = {
             '10min': agora - timedelta(minutes=10),
@@ -460,10 +425,16 @@ def atualizar_dados_pesados():
         for nome, limite in periodos.items():
             cur.execute('SELECT COUNT(*) FROM rodadas WHERE data_hora >= %s', (limite,))
             cache['pesados']['periodos'][nome] = cur.fetchone()[0]
+        
         cur.close()
         conn.close()
+        
+        cache['leves']['ultima_atualizacao'] = datetime.now(timezone.utc)
+        
+        print(f"📊 Dados atualizados: {cache['leves']['total_rodadas']} rodadas")
+        
     except Exception as e:
-        print(f"⚠️ Erro periodos: {e}")
+        print(f"⚠️ Erro atualizar dados: {e}")
 
 # =============================================================================
 # PROCESSADOR DE FILA
@@ -484,8 +455,7 @@ def processar_fila():
                 for rodada in batch:
                     if salvar_rodada(rodada, 'principal'):
                         historico_buffer.append(rodada)
-                        cache['ultimo_resultado_real'] = rodada['resultado']
-                        print(f"✅ SALVO: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Total: {len(historico_buffer)}")
+                        print(f"✅ SALVO: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Buffer: {len(historico_buffer)}")
                         
                         # =====================================================
                         # VERIFICAR PREVISÃO ANTERIOR
@@ -495,17 +465,7 @@ def processar_fila():
                             if resultado_real != 'TIE':
                                 acertou = (ultima_previsao_feita['previsao'] == resultado_real)
                                 
-                                print(f"\n📊 VERIFICANDO PREVISÃO:")
-                                print(f"   Previsão: {ultima_previsao_feita['previsao']} | Real: {resultado_real} | {'✅' if acertou else '❌'}")
-                                
-                                salvar_previsao(
-                                    ultima_previsao_feita, 
-                                    resultado_real, 
-                                    acertou, 
-                                    historico_buffer[-50:],
-                                    ultima_previsao_feita.get('total_agentes', 0),
-                                    ultima_previsao_feita.get('geracao', 0)
-                                )
+                                print(f"\n📊 PREVISÃO ANTERIOR: {ultima_previsao_feita['previsao']} | Real: {resultado_real} | {'✅' if acertou else '❌'}")
                                 
                                 cache['estatisticas']['total_previsoes'] += 1
                                 if acertou:
@@ -529,7 +489,7 @@ def processar_fila():
                                     'geracao': ultima_previsao_feita.get('geracao', 0)
                                 })
                                 
-                                if len(cache['estatisticas']['ultimas_20_previsoes']) > 20:
+                                while len(cache['estatisticas']['ultimas_20_previsoes']) > 20:
                                     cache['estatisticas']['ultimas_20_previsoes'].pop()
                                 
                                 print(f"📈 Precisão: {calcular_precisao()}%")
@@ -540,7 +500,7 @@ def processar_fila():
                         # FAZER NOVA PREVISÃO
                         # =====================================================
                         if len(historico_buffer) >= 30 and cache.get('ensemble') and ultima_previsao_feita is None:
-                            print(f"\n🔮 FAZENDO PREVISÃO...")
+                            print(f"\n🔮 FAZENDO PREVISÃO COM {len(historico_buffer)} rodadas...")
                             
                             historico_completo = []
                             for r in historico_buffer[-50:]:
@@ -564,9 +524,9 @@ def processar_fila():
                                 }
                                 cache['leves']['previsao'] = ultima_previsao_feita
                                 print(f"   ✅ PREVISÃO: {ultima_previsao_feita['previsao']} com {ultima_previsao_feita['confianca']}%")
+                                print(f"   📊 Estratégias: {ultima_previsao_feita['estrategias'][:3]}")
                     
-                    cache['leves']['ultima_atualizacao'] = datetime.now(timezone.utc)
-                    atualizar_dados_leves()
+                    atualizar_dados()
             
             time.sleep(0.1)
             
@@ -619,7 +579,7 @@ def api_stats():
 
 @app.route('/api/tabela/<int:limite>')
 def api_tabela(limite):
-    limite = min(max(limite, 50), 1000)
+    limite = min(max(limite, 50), 2000)
     conn = get_db_connection()
     if not conn:
         return jsonify([])
@@ -646,6 +606,16 @@ def api_aprendizado():
     if cache.get('ensemble'):
         return jsonify(cache['ensemble'].get_stats())
     return jsonify({'erro': 'Ensemble não inicializado'})
+
+@app.route('/api/curto-prazo')
+def api_curto_prazo():
+    stats = cache['ensemble'].get_stats() if cache.get('ensemble') else {}
+    return jsonify({
+        'status': 'ativo',
+        'estatisticas': {
+            'precisao': stats.get('precisao', 0)
+        }
+    })
 
 # =============================================================================
 # INICIALIZAÇÃO
@@ -680,14 +650,12 @@ if __name__ == "__main__":
     init_db()
     
     # Carregar dados históricos
-    print("\n📥 CARREGANDO DADOS HISTÓRICOS...")
-    carregar_historico_api()
+    carregar_historico_completo()
     
-    # Atualizar dados
-    atualizar_dados_leves()
-    atualizar_dados_pesados()
+    # Atualizar dados iniciais
+    atualizar_dados()
     
-    print(f"\n📊 TOTAL NO BANCO: {cache['leves']['total_rodadas']} rodadas")
+    print(f"\n📊 TOTAL DE RODADAS NO BANCO: {cache['leves']['total_rodadas']}")
     
     # Inicializar sistema
     inicializar_sistema()
@@ -700,8 +668,7 @@ if __name__ == "__main__":
     def loop_atualizacao():
         while True:
             time.sleep(30)
-            atualizar_dados_leves()
-            atualizar_dados_pesados()
+            atualizar_dados()
     threading.Thread(target=loop_atualizacao, daemon=True).start()
     
     print("\n" + "="*80)
