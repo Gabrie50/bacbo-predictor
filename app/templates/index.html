@@ -1,14 +1,1180 @@
-<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>BacBo Predictor</title>
-  </head>
-  <body>
-    <main>
-      <h1>BacBo Predictor - Ensemble</h1>
-      <p>Sistema Flask inicializado com especialistas, indicadores e mapa mental.</p>
-    </main>
-  </body>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 BacBo AI - Ensemble Evolutivo | Começa com 7 e CRIA NOVOS Especialistas</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0c0f;
+            color: #e0e0e0;
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Header com IA */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #2a2f35;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        .header h1 i {
+            color: #00ff88;
+            margin-right: 10px;
+        }
+
+        .ia-badge {
+            background: linear-gradient(145deg, #4d4dff, #00ff88);
+            color: #000;
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ia-dot {
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border-radius: 50%;
+            animation: pulse-ia 1.5s infinite;
+        }
+
+        @keyframes pulse-ia {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .geracao-badge {
+            background: #2a2f35;
+            color: #ffaa00;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 10px;
+            border: 1px solid #ffaa00;
+        }
+
+        .update-time {
+            color: #8a8f99;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Card de Previsão com IA */
+        .previsao-card {
+            background: linear-gradient(145deg, #1a1e24 0%, #15181c 100%);
+            border: 1px solid #4d4dff40;
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 25px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .previsao-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #4d4dff, #00ff88, #9370db);
+        }
+
+        .previsao-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .previsao-titulo {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .previsao-titulo i {
+            color: #4d4dff;
+            margin-right: 10px;
+        }
+
+        .modo-badge {
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .modo-ensemble {
+            background: #4d4dff20;
+            color: #4d4dff;
+            border: 1px solid #4d4dff;
+        }
+
+        .modo-evolutivo {
+            background: #00ff8820;
+            color: #00ff88;
+            border: 1px solid #00ff88;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+
+        .previsao-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 15px;
+        }
+
+        .previsao-item {
+            text-align: center;
+            padding: 12px;
+            background: #1e2227;
+            border-radius: 12px;
+        }
+
+        .previsao-label {
+            color: #8a8f99;
+            font-size: 11px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .previsao-cor {
+            font-size: 42px;
+            margin: 8px 0;
+        }
+
+        .previsao-valor {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .previsao-confianca {
+            font-size: 28px;
+            font-weight: 700;
+            color: #00ff88;
+        }
+
+        .previsao-ciclo {
+            font-size: 16px;
+            color: #ffaa00;
+            margin-top: 5px;
+        }
+
+        .agentes-list {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .agente-tag {
+            background: #1e2227;
+            border: 1px solid #2a2f35;
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 11px;
+            color: #8a8f99;
+            transition: all 0.3s ease;
+        }
+
+        .agente-tag:hover {
+            border-color: #4d4dff;
+            transform: translateY(-2px);
+        }
+
+        /* Stats da IA - Grid expandido */
+        .stats-ia-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 12px;
+            margin-bottom: 25px;
+        }
+
+        .stats-ia-card {
+            background: #15181c;
+            border: 1px solid #2a2f35;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .stats-ia-card:hover {
+            transform: translateY(-2px);
+            border-color: #4d4dff;
+        }
+
+        .stats-ia-valor {
+            font-size: 22px;
+            font-weight: 700;
+            color: #4d4dff;
+        }
+
+        .stats-ia-label {
+            color: #8a8f99;
+            font-size: 10px;
+            margin-top: 5px;
+        }
+
+        .stats-ia-acerto { color: #00ff88; }
+        .stats-ia-erro { color: #ff4d4d; }
+        .stats-ia-geracao { color: #ffaa00; }
+        .stats-ia-agentes { color: #9370db; }
+
+        /* Tabela de Especialistas */
+        .agentes-table {
+            width: 100%;
+            background: #15181c;
+            border: 1px solid #2a2f35;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 25px;
+        }
+
+        .agentes-table th {
+            background: #1e2227;
+            color: #8a8f99;
+            font-weight: 500;
+            font-size: 11px;
+            text-transform: uppercase;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .agentes-table th:hover {
+            color: #4d4dff;
+        }
+
+        .agentes-table td {
+            padding: 8px;
+            text-align: center;
+            border-bottom: 1px solid #2a2f35;
+            font-size: 12px;
+        }
+
+        .agente-nome {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .agente-peso {
+            font-family: 'Courier New', monospace;
+            color: #ffaa00;
+        }
+
+        .agente-geracao {
+            background: #2a2f35;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+        }
+
+        .forca-alta { color: #00ff88; }
+        .forca-media { color: #ffaa00; }
+        .forca-baixa { color: #ff4d4d; }
+
+        /* Gráficos */
+        .graficos-container {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .grafico-item {
+            background: #15181c;
+            border: 1px solid #2a2f35;
+            border-radius: 12px;
+            padding: 15px;
+            height: 250px;
+        }
+
+        .grafico-titulo {
+            color: #8a8f99;
+            font-size: 11px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Timeline */
+        .timeline-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 8px;
+            background: #1e2227;
+            border-radius: 8px;
+        }
+
+        .timeline-item {
+            padding: 10px;
+            background: #0a0c0f;
+            border: 1px solid #2a2f35;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+
+        .timeline-acerto { border-left: 3px solid #00ff88; }
+        .timeline-erro { border-left: 3px solid #ff4d4d; }
+
+        .row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .col-5 {
+            flex: 5;
+        }
+
+        .col-7 {
+            flex: 7;
+        }
+
+        .card {
+            background: #15181c;
+            border: 1px solid #2a2f35;
+            border-radius: 12px;
+            padding: 20px;
+            height: 100%;
+        }
+
+        .card-title {
+            color: #8a8f99;
+            font-size: 13px;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* Mapa Mental Card */
+        .mapa-mental-card {
+            background: linear-gradient(145deg, #1a1e24 0%, #15181c 100%);
+            border: 1px solid #9370db40;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .mapa-mental-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .mapa-stat {
+            text-align: center;
+            padding: 10px;
+            background: #1e2227;
+            border-radius: 8px;
+        }
+
+        .mapa-stat-valor {
+            font-size: 28px;
+            font-weight: 700;
+            color: #9370db;
+        }
+
+        .mapa-stat-label {
+            font-size: 10px;
+            color: #8a8f99;
+        }
+
+        .padroes-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 15px;
+        }
+
+        .padrao-tag {
+            background: #9370db20;
+            border: 1px solid #9370db;
+            border-radius: 16px;
+            padding: 3px 10px;
+            font-size: 10px;
+            color: #9370db;
+        }
+
+        /* Distribuição Cards */
+        .distribuicao-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .distribuicao-card {
+            background: #15181c;
+            border: 1px solid #2a2f35;
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .distribuicao-card:hover {
+            border-color: #4d4dff;
+        }
+
+        .distribuicao-numero {
+            font-size: 36px;
+            font-weight: 700;
+        }
+
+        .player-color { color: #4d4dff; }
+        .banker-color { color: #ff4d4d; }
+        .tie-color { color: #ffaa00; }
+
+        .numeros-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 8px;
+            margin-top: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+            background: #1e2227;
+            border-radius: 8px;
+        }
+
+        .numero-item {
+            padding: 8px;
+            background: #0a0c0f;
+            border: 1px solid #2a2f35;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .limite-buttons {
+            display: flex;
+            gap: 8px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+
+        .limite-btn {
+            background: #1e2227;
+            border: 1px solid #2a2f35;
+            color: #8a8f99;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .limite-btn.active {
+            background: #4d4dff;
+            border-color: #4d4dff;
+            color: #fff;
+        }
+
+        .info-badge {
+            background: #2a2f35;
+            color: #8a8f99;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+        }
+
+        .badge-ensemble {
+            background: #4d4dff20;
+            color: #4d4dff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #15181c;
+            border-radius: 8px;
+            flex-wrap: wrap;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .dot-purple { background: #9370db; }
+        .dot-green { background: #00ff88; }
+        .dot-blue { background: #4d4dff; }
+        .dot-yellow { background: #ffaa00; }
+
+        .cache-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff88;
+            animation: pulse 1s infinite;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #8a8f99;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>
+                <i class="bi bi-cpu"></i>
+                BacBo AI - <span id="totalAgentesDisplay">7</span> Especialistas 
+                <span style="color: #00ff88; font-size: 14px;">(CRIA NOVOS DINAMICAMENTE)</span>
+                <span class="geracao-badge" id="geracaoAtual">Geração 0</span>
+            </h1>
+            <div class="ia-badge">
+                <span class="ia-dot"></span>
+                <span id="liveStatus">ENSEMBLE EVOLUTIVO</span>
+                <span class="update-time" id="updateTime">carregando...</span>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-dot dot-purple"></span>
+                <span>Começou com 7</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot dot-green"></span>
+                <span id="agentesCriadosDisplay">0 criados</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot dot-blue"></span>
+                <span id="agentesAtivosDisplay">0 ativos</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot dot-yellow"></span>
+                <span id="geracaoDisplay">Geração 0</span>
+            </div>
+            <div class="cache-indicator" style="display: flex; align-items: center; gap: 5px;">
+                <span class="cache-dot"></span>
+                <span>Cache ativo</span>
+            </div>
+        </div>
+
+        <!-- Card de Previsão -->
+        <div class="previsao-card">
+            <div class="previsao-header">
+                <div class="previsao-titulo">
+                    <i class="bi bi-brain"></i>
+                    DECISÃO DO ENSEMBLE EVOLUTIVO
+                </div>
+                <div class="modo-badge modo-evolutivo" id="modoAlgoritmo">ENSEMBLE EVOLUTIVO</div>
+            </div>
+
+            <div class="previsao-grid">
+                <div class="previsao-item">
+                    <div class="previsao-label">MODO</div>
+                    <div class="previsao-valor" id="modoDescricao">EVOLUTIVO</div>
+                </div>
+                <div class="previsao-item">
+                    <div class="previsao-label">PREVISÃO</div>
+                    <div class="previsao-cor" id="proximaCorSimbolo">⚪</div>
+                    <div class="previsao-valor" id="proximaCorTexto">AGUARDANDO</div>
+                </div>
+                <div class="previsao-item">
+                    <div class="previsao-label">CONFIANÇA</div>
+                    <div class="previsao-confianca" id="confianca">0%</div>
+                </div>
+                <div class="previsao-item">
+                    <div class="previsao-label">ESPECIALISTAS</div>
+                    <div class="previsao-valor" id="totalEspecialistas">0</div>
+                </div>
+                <div class="previsao-item">
+                    <div class="previsao-label">MEMÓRIAS</div>
+                    <div class="previsao-ciclo" id="memoriasAtivas">-</div>
+                </div>
+                <div class="previsao-item">
+                    <div class="previsao-label">VOTOS</div>
+                    <div class="previsao-valor" id="votosTotal">-</div>
+                </div>
+                <div class="previsao-item">
+                    <div class="previsao-label">GERAÇÃO</div>
+                    <div class="previsao-valor" id="geracaoPrevisao">0</div>
+                </div>
+            </div>
+
+            <div class="agentes-list" id="agentesAtivos">
+                <span class="agente-tag">🧠 7 especialistas iniciais</span>
+            </div>
+        </div>
+
+        <!-- Mapa Mental Card -->
+        <div class="mapa-mental-card">
+            <div class="card-title">
+                <i class="bi bi-diagram-3"></i>
+                🗺️ MAPA MENTAL - Memórias Aprendidas
+                <span class="info-badge" id="totalMemorias">0 memórias</span>
+                <span class="badge-ensemble" id="precisaoMemorias">0% precisão</span>
+            </div>
+            <div class="mapa-mental-stats">
+                <div class="mapa-stat">
+                    <div class="mapa-stat-valor" id="totalCelulas">0</div>
+                    <div class="mapa-stat-label">CÉLULAS DE MEMÓRIA</div>
+                </div>
+                <div class="mapa-stat">
+                    <div class="mapa-stat-valor stats-ia-acerto" id="precisaoMemoriaMedia">0%</div>
+                    <div class="mapa-stat-label">PRECISÃO MÉDIA</div>
+                </div>
+                <div class="mapa-stat">
+                    <div class="mapa-stat-valor stats-ia-agentes" id="padroesMemoria">0</div>
+                    <div class="mapa-stat-label">PADRÕES APRENDIDOS</div>
+                </div>
+                <div class="mapa-stat">
+                    <div class="mapa-stat-valor" id="totalCriados">0</div>
+                    <div class="mapa-stat-label">AGENTES CRIADOS</div>
+                </div>
+            </div>
+            <div class="padroes-list" id="padroesMemoriaList">
+                <span class="padrao-tag">Aguardando aprendizado...</span>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-ia-grid">
+            <div class="stats-ia-card" onclick="window.location.href='/api/aprendizado'">
+                <div class="stats-ia-valor stats-ia-agentes" id="totalAgentesStats">7</div>
+                <div class="stats-ia-label">TOTAL AGENTES</div>
+            </div>
+            <div class="stats-ia-card" onclick="window.location.href='/api/stats'">
+                <div class="stats-ia-valor" id="totalRodadasIA">0</div>
+                <div class="stats-ia-label">RODADAS</div>
+            </div>
+            <div class="stats-ia-card" onclick="window.location.href='/api/aprendizado'">
+                <div class="stats-ia-valor stats-ia-acerto" id="melhorPrecisao">0%</div>
+                <div class="stats-ia-label">TOP ESPECIALISTA</div>
+            </div>
+            <div class="stats-ia-card" onclick="window.location.href='/api/stats'">
+                <div class="stats-ia-valor" id="totalPrevisoesIA">0</div>
+                <div class="stats-ia-label">PREVISÕES</div>
+            </div>
+            <div class="stats-ia-card" onclick="window.location.href='/api/stats'">
+                <div class="stats-ia-valor stats-ia-acerto" id="acertosIA">0</div>
+                <div class="stats-ia-label">ACERTOS</div>
+            </div>
+            <div class="stats-ia-card" onclick="window.location.href='/api/stats'">
+                <div class="stats-ia-valor stats-ia-erro" id="errosIA">0</div>
+                <div class="stats-ia-label">ERROS</div>
+            </div>
+            <div class="stats-ia-card" onclick="window.location.href='/api/aprendizado'">
+                <div class="stats-ia-valor stats-ia-geracao" id="precisaoEnsemble">0%</div>
+                <div class="stats-ia-label">PRECISÃO</div>
+            </div>
+            <div class="stats-ia-card" onclick="window.location.href='/api/aprendizado'">
+                <div class="stats-ia-valor stats-ia-geracao" id="geracaoNumero">0</div>
+                <div class="stats-ia-label">GERAÇÃO</div>
+            </div>
+        </div>
+
+        <!-- Tabela de Especialistas -->
+        <div class="card">
+            <div class="card-title">
+                <i class="bi bi-people"></i>
+                ESPECIALISTAS ATIVOS - ORDEM DECRESCENTE DE PRECISÃO
+                <span class="info-badge" id="agentesAtivosCount">0 ativos</span>
+                <span class="badge-ensemble">Clique nos cabeçalhos para ordenar</span>
+            </div>
+            <table class="agentes-table">
+                <thead>
+                    <tr>
+                        <th onclick="ordenarTabela('nome')">Especialista <i class="bi bi-arrow-down-up"></i></th>
+                        <th onclick="ordenarTabela('acertos')">Acertos <i class="bi bi-arrow-down-up"></i></th>
+                        <th onclick="ordenarTabela('erros')">Erros <i class="bi bi-arrow-down-up"></i></th>
+                        <th onclick="ordenarTabela('precisao')">Precisão <i class="bi bi-arrow-down-up"></i></th>
+                        <th onclick="ordenarTabela('peso')">Peso <i class="bi bi-arrow-down-up"></i></th>
+                        <th>Padrão</th>
+                        <th>Geração</th>
+                    </tr>
+                </thead>
+                <tbody id="agentesTableBody">
+                    <tr><td colspan="7" class="text-center">Carregando especialistas...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Gráficos -->
+        <div class="graficos-container">
+            <div class="grafico-item">
+                <div class="grafico-titulo"><i class="bi bi-graph-up"></i> Precisão dos Especialistas</div>
+                <canvas id="evolucaoChart"></canvas>
+            </div>
+            <div class="grafico-item">
+                <div class="grafico-titulo"><i class="bi bi-bar-chart"></i> Acertos vs Erros</div>
+                <canvas id="acertosErrosChart"></canvas>
+            </div>
+            <div class="grafico-item">
+                <div class="grafico-titulo"><i class="bi bi-pie-chart"></i> Evolução da População</div>
+                <canvas id="populacaoChart"></canvas>
+            </div>
+            <div class="grafico-item">
+                <div class="grafico-titulo"><i class="bi bi-diagram-3"></i> Memórias por Padrão</div>
+                <canvas id="memoriasChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Timeline e Histórico -->
+        <div class="row">
+            <div class="col-5">
+                <div class="card">
+                    <div class="card-title">
+                        <i class="bi bi-clock-history"></i>
+                        ÚLTIMAS 20 DECISÕES
+                        <span class="badge-ensemble" id="ensembleRecent">0 ensemble</span>
+                    </div>
+                    <div class="timeline-grid" id="timelineGrid">
+                        <div class="loading">Carregando...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-7">
+                <!-- Distribuição Cards -->
+                <div class="distribuicao-grid">
+                    <div class="distribuicao-card" onclick="setFiltro('player')">
+                        <div class="distribuicao-numero player-color" id="playerNumero">-</div>
+                        <div class="distribuicao-label">PLAYER</div>
+                        <div class="distribuicao-percent player-color" id="playerPercent">-</div>
+                    </div>
+                    <div class="distribuicao-card" onclick="setFiltro('tie')">
+                        <div class="distribuicao-numero tie-color" id="tieNumero">-</div>
+                        <div class="distribuicao-label">TIE</div>
+                        <div class="distribuicao-percent tie-color" id="tiePercent">-</div>
+                    </div>
+                    <div class="distribuicao-card" onclick="setFiltro('banker')">
+                        <div class="distribuicao-numero banker-color" id="bankerNumero">-</div>
+                        <div class="distribuicao-label">BANKER</div>
+                        <div class="distribuicao-percent banker-color" id="bankerPercent">-</div>
+                    </div>
+                </div>
+
+                <!-- Botões de Limite -->
+                <div class="limite-buttons">
+                    <button class="limite-btn active" onclick="carregarTabelaCache(50)">50</button>
+                    <button class="limite-btn" onclick="carregarTabelaCache(250)">250</button>
+                    <button class="limite-btn" onclick="carregarTabelaCache(500)">500</button>
+                    <button class="limite-btn" onclick="carregarTabelaCache(1000)">1K</button>
+                    <button class="limite-btn" onclick="carregarTabelaCache(2000)">2K</button>
+                </div>
+
+                <!-- Tabela de Rodadas -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="bi bi-table"></i>
+                        Histórico <span class="cache-indicator">(cache)</span>
+                        <span class="badge bg-secondary ms-2" id="tabelaCount">0</span>
+                        <span class="info-badge" id="filtroAtivo">todas</span>
+                    </div>
+                    <div class="numeros-grid" id="numerosGrid">
+                        <div class="loading">Carregando...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // =========================================================================
+    // CONFIGURAÇÕES
+    // =========================================================================
+    const CONFIG = {
+        INTERVALO_ATUALIZACAO: 3000,
+        LIMITE_PADRAO: 50
+    };
+
+    let evolucaoChart = null;
+    let acertosErrosChart = null;
+    let populacaoChart = null;
+    let memoriasChart = null;
+    let dadosCompletos = [];
+    let filtroAtual = null;
+    let limiteAtual = CONFIG.LIMITE_PADRAO;
+    let ordemTabela = { coluna: 'precisao', direcao: 'desc' };
+    let dadosEspecialistas = [];
+    
+    let cacheTabela = { dados: null, timestamp: 0, limite: 50 };
+
+    // =========================================================================
+    // FUNÇÕES AUXILIARES
+    // =========================================================================
+    function removerDuplicatas(rodadas) {
+        const seen = new Set();
+        return rodadas.filter(r => {
+            const chave = `${r.data}-${r.player}-${r.banker}`;
+            if (seen.has(chave)) return false;
+            seen.add(chave);
+            return true;
+        });
+    }
+
+    function atualizarRelogio() {
+        const agora = new Date();
+        const brasilia = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+        document.getElementById('updateTime').textContent = `${String(brasilia.getHours()).padStart(2,'0')}:${String(brasilia.getMinutes()).padStart(2,'0')}:${String(brasilia.getSeconds()).padStart(2,'0')}`;
+    }
+
+    function setFiltro(tipo) {
+        filtroAtual = filtroAtual === tipo ? null : tipo;
+        document.getElementById('filtroAtivo').textContent = filtroAtual ? `apenas ${filtroAtual}` : 'todas';
+        exibirHistorico(dadosCompletos);
+    }
+
+    function ordenarTabela(coluna) {
+        if (ordemTabela.coluna === coluna) ordemTabela.direcao = ordemTabela.direcao === 'asc' ? 'desc' : 'asc';
+        else { ordemTabela.coluna = coluna; ordemTabela.direcao = 'desc'; }
+        atualizarTabelaEspecialistas(dadosEspecialistas);
+    }
+
+    // =========================================================================
+    // GRÁFICOS
+    // =========================================================================
+    function criarGraficos() {
+        const ctxEvolucao = document.getElementById('evolucaoChart').getContext('2d');
+        evolucaoChart = new Chart(ctxEvolucao, {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Precisão (%)', data: [], backgroundColor: '#4d4dff' }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100 } } }
+        });
+
+        const ctxAcertos = document.getElementById('acertosErrosChart').getContext('2d');
+        acertosErrosChart = new Chart(ctxAcertos, {
+            type: 'bar',
+            data: { labels: ['Acertos', 'Erros'], datasets: [{ data: [0, 0], backgroundColor: ['#00ff88', '#ff4d4d'] }] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        const ctxPopulacao = document.getElementById('populacaoChart').getContext('2d');
+        populacaoChart = new Chart(ctxPopulacao, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Nº de Agentes', data: [], borderColor: '#ffaa00', tension: 0.3 }] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        const ctxMemorias = document.getElementById('memoriasChart').getContext('2d');
+        memoriasChart = new Chart(ctxMemorias, {
+            type: 'pie',
+            data: { labels: [], datasets: [{ data: [], backgroundColor: ['#9370db', '#4d4dff', '#00ff88', '#ffaa00'] }] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    // =========================================================================
+    // ATUALIZAÇÕES
+    // =========================================================================
+    function atualizarTabelaEspecialistas(especialistas) {
+        if (!especialistas || especialistas.length === 0) {
+            document.getElementById('agentesTableBody').innerHTML = '<tr><td colspan="7">Nenhum especialista</td></tr>';
+            return;
+        }
+
+        dadosEspecialistas = especialistas;
+        let ordenados = [...especialistas];
+        ordenados.sort((a, b) => {
+            let valA, valB;
+            switch(ordemTabela.coluna) {
+                case 'nome': valA = a.nome; valB = b.nome; break;
+                case 'acertos': valA = a.acertos; valB = b.acertos; break;
+                case 'erros': valA = a.erros; valB = b.erros; break;
+                case 'precisao': valA = a.precisao; valB = b.precisao; break;
+                case 'peso': valA = a.peso; valB = b.peso; break;
+                default: valA = a.precisao; valB = b.precisao;
+            }
+            return ordemTabela.direcao === 'asc' ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
+        });
+
+        document.getElementById('agentesAtivosCount').textContent = `${ordenados.length} ativos`;
+        document.getElementById('agentesAtivosDisplay').textContent = `${ordenados.length} ativos`;
+
+        let html = '';
+        let forcaAlta = 0, forcaMedia = 0, forcaBaixa = 0;
+        
+        ordenados.forEach(e => {
+            const precisao = e.precisao || 0;
+            if (precisao >= 70) forcaAlta++;
+            else if (precisao >= 50) forcaMedia++;
+            else forcaBaixa++;
+            
+            const forcaClass = precisao >= 70 ? 'forca-alta' : (precisao >= 50 ? 'forca-media' : 'forca-baixa');
+            html += `<tr>
+                <td class="agente-nome">${e.nome}</td>
+                <td>${e.acertos}</td>
+                <td>${e.erros}</td>
+                <td class="${forcaClass}">${precisao.toFixed(1)}%</td>
+                <td class="agente-peso">${(e.peso || 1).toFixed(3)}</td>
+                <td>${e.padrao || '-'}</td>
+                <td><span class="agente-geracao">${e.geracao || 0}</span></td>
+            </tr>`;
+        });
+
+        document.getElementById('agentesTableBody').innerHTML = html;
+        document.getElementById('totalAgentesDisplay').textContent = ordenados.length;
+        document.getElementById('totalAgentesStats').textContent = ordenados.length;
+
+        if (evolucaoChart && ordenados.length) {
+            evolucaoChart.data.labels = ordenados.map(e => e.nome.substring(0, 12));
+            evolucaoChart.data.datasets[0].data = ordenados.map(e => e.precisao || 0);
+            evolucaoChart.update();
+        }
+    }
+
+    function atualizarTimeline(previsoes) {
+        const grid = document.getElementById('timelineGrid');
+        if (!previsoes?.length) { grid.innerHTML = '<div class="loading">Nenhuma previsão</div>'; return; }
+
+        let html = '';
+        let ensembleCount = 0;
+        
+        previsoes.slice(0, 20).forEach(p => {
+            const acertou = p.acertou;
+            if (p.modo?.includes('ENSEMBLE')) ensembleCount++;
+            const classe = acertou ? 'timeline-acerto' : 'timeline-erro';
+            html += `<div class="timeline-item ${classe}">
+                <div><strong>${p.simbolo || '⚪'} ${p.previsao}</strong> <span style="float:right">${p.confianca}%</span></div>
+                <div>Real: ${p.resultado_real} | ${p.data}</div>
+                <div style="font-size:10px;color:#8a8f99">${(p.estrategias || []).slice(0,3).join(', ')}</div>
+            </div>`;
+        });
+        grid.innerHTML = html;
+        document.getElementById('ensembleRecent').textContent = `${ensembleCount} ensemble`;
+    }
+
+    function exibirHistorico(data) {
+        if (!data?.length) { document.getElementById('numerosGrid').innerHTML = '<div class="loading">Sem dados</div>'; return; }
+
+        let dados = removerDuplicatas(data);
+        if (filtroAtual) dados = dados.filter(r => r.resultado.toLowerCase() === filtroAtual.toLowerCase());
+
+        let html = '';
+        dados.slice(0, 100).forEach(item => {
+            const classe = item.resultado === 'PLAYER' ? 'numero-player' : (item.resultado === 'BANKER' ? 'numero-banker' : 'numero-tie');
+            html += `<div class="numero-item ${classe}">
+                <div>${item.player} vs ${item.banker}</div>
+                <div>${item.data || ''}</div>
+                <div>${item.resultado === 'PLAYER' ? '🔵' : (item.resultado === 'BANKER' ? '🔴' : '🟡')}</div>
+            </div>`;
+        });
+        document.getElementById('numerosGrid').innerHTML = html;
+    }
+
+    async function carregarTabelaCache(limite) {
+        limiteAtual = limite;
+        document.querySelectorAll('.limite-btn').forEach(btn => btn.classList.remove('active'));
+        event?.target?.classList?.add('active');
+        
+        const agora = Date.now();
+        if (cacheTabela.dados && cacheTabela.limite === limite && agora - cacheTabela.timestamp < 60000) {
+            dadosCompletos = cacheTabela.dados;
+            atualizarInterfaceTabela();
+            return;
+        }
+        await carregarTabela(limite);
+    }
+
+    function atualizarInterfaceTabela() {
+        if (!dadosCompletos?.length) return;
+        const player = dadosCompletos.filter(r => r.resultado === 'PLAYER').length;
+        const banker = dadosCompletos.filter(r => r.resultado === 'BANKER').length;
+        const tie = dadosCompletos.filter(r => r.resultado === 'TIE').length;
+        const total = dadosCompletos.length;
+        
+        document.getElementById('tabelaCount').textContent = total;
+        document.getElementById('playerNumero').textContent = player;
+        document.getElementById('bankerNumero').textContent = banker;
+        document.getElementById('tieNumero').textContent = tie;
+        if (total) {
+            document.getElementById('playerPercent').textContent = ((player/total)*100).toFixed(1)+'%';
+            document.getElementById('bankerPercent').textContent = ((banker/total)*100).tofixed(1)+'%';
+            document.getElementById('tiePercent').textContent = ((tie/total)*100).toFixed(1)+'%';
+        }
+        exibirHistorico(dadosCompletos);
+    }
+
+    async function carregarTabela(limite) {
+        try {
+            const res = await fetch(`/api/tabela/${limite}`);
+            dadosCompletos = removerDuplicatas(await res.json());
+            cacheTabela = { dados: dadosCompletos, timestamp: Date.now(), limite };
+            atualizarInterfaceTabela();
+        } catch(e) { console.error(e); }
+    }
+
+    async function carregarMapaMental() {
+        try {
+            const res = await fetch('/api/aprendizado');
+            const data = await res.json();
+            if (data.mapa_mental) {
+                const mm = data.mapa_mental;
+                document.getElementById('totalMemorias').textContent = `${mm.total || 0} memórias`;
+                document.getElementById('totalCelulas').textContent = mm.total || 0;
+                document.getElementById('precisaoMemoriaMedia').textContent = `${mm.precisao_media || 0}%`;
+                document.getElementById('precisaoMemorias').textContent = `${mm.precisao_media || 0}%`;
+                document.getElementById('padroesMemoria').textContent = Object.keys(mm.padroes || {}).length;
+                
+                const padroes = mm.padroes || {};
+                let padroesHtml = '';
+                for (const [p, c] of Object.entries(padroes).slice(0, 8)) {
+                    padroesHtml += `<span class="padrao-tag">${p}: ${c}</span>`;
+                }
+                document.getElementById('padroesMemoriaList').innerHTML = padroesHtml || '<span class="padrao-tag">Aprendendo...</span>';
+                
+                if (memoriasChart && Object.keys(padroes).length) {
+                    memoriasChart.data.labels = Object.keys(padroes).slice(0, 5);
+                    memoriasChart.data.datasets[0].data = Object.values(padroes).slice(0, 5);
+                    memoriasChart.update();
+                }
+            }
+            if (data.evolucao) {
+                document.getElementById('totalCriados').textContent = data.evolucao.total_agentes_criados || 0;
+                document.getElementById('agentesCriadosDisplay').textContent = `${data.evolucao.total_agentes_criados || 0} criados`;
+                document.getElementById('geracaoDisplay').textContent = `Geração ${data.evolucao.geracao_atual || 0}`;
+                if (populacaoChart && data.evolucao.historico_populacao) {
+                    const hist = data.evolucao.historico_populacao;
+                    populacaoChart.data.labels = hist.map(h => h.geracao);
+                    populacaoChart.data.datasets[0].data = hist.map(h => h.total_agentes);
+                    populacaoChart.update();
+                }
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    async function atualizarTudo() {
+        try {
+            await carregarMapaMental();
+            
+            const [statsRes, aprendizadoRes] = await Promise.allSettled([
+                fetch('/api/stats').then(r => r.json()),
+                fetch('/api/aprendizado').then(r => r.json())
+            ]);
+
+            if (statsRes.status === 'fulfilled' && statsRes.value) {
+                const s = statsRes.value;
+                if (s.previsao) {
+                    const p = s.previsao;
+                    document.getElementById('modoAlgoritmo').textContent = p.modo || 'ENSEMBLE EVOLUTIVO';
+                    document.getElementById('modoDescricao').textContent = p.modo || 'EVOLUTIVO';
+                    document.getElementById('proximaCorSimbolo').textContent = p.simbolo || '⚪';
+                    document.getElementById('proximaCorTexto').textContent = p.previsao || '-';
+                    document.getElementById('confianca').textContent = (p.confianca || 0) + '%';
+                    document.getElementById('totalEspecialistas').textContent = p.total_agentes || 0;
+                    document.getElementById('memoriasAtivas').textContent = p.memorias_ativas || 0;
+                    document.getElementById('votosTotal').textContent = p.total_votos || 0;
+                    document.getElementById('geracaoPrevisao').textContent = p.geracao || 0;
+                    
+                    if (p.estrategias?.length) {
+                        let html = '';
+                        p.estrategias.slice(0, 8).forEach(e => html += `<span class="agente-tag">${e}</span>`);
+                        document.getElementById('agentesAtivos').innerHTML = html;
+                    }
+                }
+                if (s.estatisticas) {
+                    document.getElementById('totalPrevisoesIA').textContent = s.estatisticas.total_previsoes || 0;
+                    document.getElementById('acertosIA').textContent = s.estatisticas.acertos || 0;
+                    document.getElementById('errosIA').textContent = s.estatisticas.erros || 0;
+                    document.getElementById('totalRodadasIA').textContent = s.total_rodadas || 0;
+                    document.getElementById('precisaoEnsemble').textContent = (s.estatisticas.precisao || 0) + '%';
+                    if (acertosErrosChart) {
+                        acertosErrosChart.data.datasets[0].data = [s.estatisticas.acertos || 0, s.estatisticas.erros || 0];
+                        acertosErrosChart.update();
+                    }
+                    if (s.estatisticas.ultimas_20_previsoes) atualizarTimeline(s.estatisticas.ultimas_20_previsoes);
+                }
+            }
+
+            if (aprendizadoRes.status === 'fulfilled' && aprendizadoRes.value?.especialistas) {
+                const melhor = aprendizadoRes.value.especialistas.reduce((max, e) => (e.precisao > max.precisao ? e : max), { precisao: 0 });
+                document.getElementById('melhorPrecisao').textContent = (melhor.precisao || 0).toFixed(1) + '%';
+                document.getElementById('geracaoNumero').textContent = aprendizadoRes.value.evolucao?.geracao_atual || 0;
+                document.getElementById('geracaoAtual').textContent = `Geração ${aprendizadoRes.value.evolucao?.geracao_atual || 0}`;
+                atualizarTabelaEspecialistas(aprendizadoRes.value.especialistas);
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    // =========================================================================
+    // INICIALIZAÇÃO
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('🚀 BacBo Ensemble Evolutivo - Começa com 7 e CRIA NOVOS!');
+        criarGraficos();
+        setTimeout(() => carregarTabelaCache(50), 100);
+        atualizarRelogio();
+        setInterval(atualizarRelogio, 1000);
+        setInterval(atualizarTudo, CONFIG.INTERVALO_ATUALIZACAO);
+        setTimeout(atualizarTudo, 500);
+    });
+
+    window.carregarTabelaCache = carregarTabelaCache;
+    window.setFiltro = setFiltro;
+    window.ordenarTabela = ordenarTabela;
+</script>
+</body>
 </html>
