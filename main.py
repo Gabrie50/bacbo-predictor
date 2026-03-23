@@ -1,4 +1,4 @@
-# main.py - VERSÃO CORRIGIDA COM HEADERS MELHORADOS E FALLBACK
+# main.py - VERSÃO COMPLETA COM 3 FONTES, LOOP PESADO E CARGA HISTÓRICA
 # =============================================================================
 
 import os
@@ -96,8 +96,6 @@ HEADERS = {
 }
 
 TIMEOUT_API = 5
-MAX_RETRIES = 3
-RETRY_DELAY = 1
 INTERVALO_LATEST = 0.2
 INTERVALO_WS_FALLBACK = 3
 INTERVALO_NORMAL_FALLBACK = 10
@@ -109,7 +107,7 @@ PORT = int(os.environ.get("PORT", 5000))
 falhas_latest = 0
 falhas_websocket = 0
 falhas_api_normal = 0
-LIMITE_FALHAS = 10  # Aumentado para dar mais chances
+LIMITE_FALHAS = 10
 
 fontes_status = {
     'latest': {'status': 'ativo', 'total': 0, 'falhas': 0, 'prioridade': 1},
@@ -147,7 +145,6 @@ cache = {
     'ultimo_resultado_real': None
 }
 
-# Fila de rodadas
 fila_rodadas = deque(maxlen=500)
 ultimo_id_latest = None
 ultimo_id_websocket = None
@@ -297,14 +294,11 @@ def gerar_rodada_teste():
     """Gera uma rodada de teste quando a API não responde"""
     global ultimo_id_latest
     
-    # Gerar ID único
     novo_id = f"teste_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
     
-    # Gerar scores aleatórios
     player_score = random.randint(2, 12)
     banker_score = random.randint(2, 12)
     
-    # Decidir resultado baseado nos scores
     if player_score > banker_score:
         resultado = 'PLAYER'
     elif banker_score > player_score:
@@ -328,88 +322,84 @@ def gerar_rodada_teste():
 # =============================================================================
 
 def carregar_rodadas_passadas():
-    """Carrega rodadas passadas da API normal ou gera dados de teste"""
+    """Carrega rodadas passadas da API normal"""
     print("\n" + "="*80)
-    print("📥 CARREGANDO RODADAS PASSADAS")
+    print("📥 CARREGANDO RODADAS PASSADAS DA API")
     print("="*80)
     
     total_carregadas = 0
     pagina = 0
-    max_paginas = 3
+    max_paginas = 5
     
-    # Tentar API real primeiro
-    api_funcionou = False
-    
-    while pagina < max_paginas and not api_funcionou:
+    for pagina in range(max_paginas):
         try:
             params = {
                 'page': pagina,
-                'size': 50,
+                'size': 100,
                 'sort': 'data.settledAt,desc',
                 '_t': int(time.time() * 1000)
             }
             
-            print(f"📡 Tentando API página {pagina}...", end=' ')
-            response = requests.get(API_URL, params=params, headers=HEADERS, timeout=10)
+            print(f"📡 Carregando página {pagina}...", end=' ')
+            response = requests.get(API_URL, params=params, headers=HEADERS, timeout=15)
             
-            if response.status_code == 200:
-                dados = response.json()
-                if dados and len(dados) > 0:
-                    api_funcionou = True
-                    print(f"✅ API funcionou!")
-                    
-                    for item in dados[:50]:
-                        try:
-                            data = item.get('data', {})
-                            result = data.get('result', {})
-                            
-                            player_dice = result.get('playerDice', {})
-                            banker_dice = result.get('bankerDice', {})
-                            player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
-                            banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
-                            
-                            outcome = result.get('outcome', '')
-                            if outcome == 'PlayerWon':
-                                resultado = 'PLAYER'
-                            elif outcome == 'BankerWon':
-                                resultado = 'BANKER'
-                            else:
-                                resultado = 'TIE'
-                            
-                            settled_at = data.get('settledAt', '')
-                            if settled_at:
-                                data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
-                            else:
-                                data_hora = datetime.now(timezone.utc)
-                            
-                            rodada = {
-                                'id': data.get('id'),
-                                'data_hora': data_hora,
-                                'player_score': player_score,
-                                'banker_score': banker_score,
-                                'resultado': resultado
-                            }
-                            
-                            if salvar_rodada(rodada, 'historico'):
-                                total_carregadas += 1
-                                
-                        except Exception as e:
-                            continue
-                    
-                    break
-                else:
-                    print("⚠️ Sem dados")
-            else:
+            if response.status_code != 200:
                 print(f"❌ Status {response.status_code}")
-                
-            pagina += 1
+                continue
+            
+            dados = response.json()
+            if not dados or len(dados) == 0:
+                print("⚠️ Sem dados")
+                continue
+            
+            novas = 0
+            for item in dados:
+                try:
+                    data = item.get('data', {})
+                    result = data.get('result', {})
+                    
+                    player_dice = result.get('playerDice', {})
+                    banker_dice = result.get('bankerDice', {})
+                    player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
+                    banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
+                    
+                    outcome = result.get('outcome', '')
+                    if outcome == 'PlayerWon':
+                        resultado = 'PLAYER'
+                    elif outcome == 'BankerWon':
+                        resultado = 'BANKER'
+                    else:
+                        resultado = 'TIE'
+                    
+                    settled_at = data.get('settledAt', '')
+                    if settled_at:
+                        data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
+                    else:
+                        data_hora = datetime.now(timezone.utc)
+                    
+                    rodada = {
+                        'id': data.get('id'),
+                        'data_hora': data_hora,
+                        'player_score': player_score,
+                        'banker_score': banker_score,
+                        'resultado': resultado
+                    }
+                    
+                    if salvar_rodada(rodada, 'historico'):
+                        novas += 1
+                        total_carregadas += 1
+                        
+                except Exception as e:
+                    continue
+            
+            print(f"✅ +{novas} rodadas")
             time.sleep(0.5)
             
         except Exception as e:
             print(f"❌ Erro: {e}")
-            pagina += 1
+            continue
     
-    # Se API falhou, gerar dados de teste
+    # Se não carregou nenhuma, gerar dados de teste
     if total_carregadas == 0:
         print("\n⚠️ API não respondeu. Gerando dados de teste...")
         for i in range(100):
@@ -619,7 +609,7 @@ def buscar_api_normal():
     try:
         params = {
             'page': 0,
-            'size': 20,
+            'size': 100,
             'sort': 'data.settledAt,desc',
             '_t': int(time.time() * 1000)
         }
@@ -633,7 +623,7 @@ def buscar_api_normal():
                     falhas_api_normal = 0
 
                 rodadas = []
-                for item in dados[:10]:
+                for item in dados[:20]:
                     try:
                         data = item.get('data', {})
                         result = data.get('result', {})
@@ -686,7 +676,7 @@ def buscar_api_normal():
         return None
 
 # =============================================================================
-# 📡 FONTE 4: GERADOR DE TESTE (QUANDO TUDO FALHA)
+# 📡 FONTE 4: GERADOR DE TESTE
 # =============================================================================
 
 def buscar_teste():
@@ -709,7 +699,7 @@ def loop_latest():
                 rodada = buscar_latest()
             elif fonte_ativa == 'teste':
                 rodada = buscar_teste()
-                time.sleep(1)  # Delay maior para teste
+                time.sleep(1)
             
             if rodada:
                 fila_rodadas.append(rodada)
@@ -752,18 +742,14 @@ def atualizar_dados_leves():
     try:
         cur = conn.cursor()
         
-        # Total de rodadas
         cur.execute('SELECT COUNT(*) FROM rodadas')
         total = cur.fetchone()[0]
         cache['leves']['total_rodadas'] = total
-        print(f"📊 Atualizado: {total} rodadas no banco")
         
-        # Últimas 50
         cur.execute('SELECT player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 50')
         rows = cur.fetchall()
         cache['leves']['ultimas_50'] = [{'player_score': r[0], 'banker_score': r[1], 'resultado': r[2]} for r in rows]
         
-        # Últimas 20 para o frontend
         cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 20')
         rows = cur.fetchall()
         ultimas = []
@@ -782,6 +768,7 @@ def atualizar_dados_leves():
         
         cur.close()
         conn.close()
+        print(f"📊 Dados atualizados: {total} rodadas")
     except Exception as e:
         print(f"⚠️ Erro atualizar dados: {e}")
 
@@ -845,9 +832,6 @@ def processar_fila():
                         cache['ultimo_resultado_real'] = rodada['resultado']
                         print(f"✅ SALVO: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Buffer: {len(historico_buffer)}")
                         
-                        # =====================================================
-                        # VERIFICAR PREVISÃO ANTERIOR
-                        # =====================================================
                         if ultima_previsao_feita:
                             resultado_real = rodada['resultado']
                             if resultado_real != 'TIE':
@@ -892,9 +876,6 @@ def processar_fila():
                             
                             ultima_previsao_feita = None
                         
-                        # =====================================================
-                        # FAZER NOVA PREVISÃO
-                        # =====================================================
                         if len(historico_buffer) >= 30 and cache.get('ensemble') and ultima_previsao_feita is None:
                             print(f"\n🔮 FAZENDO PREVISÃO COM {len(historico_buffer)} rodadas...")
                             
@@ -1052,22 +1033,23 @@ if __name__ == "__main__":
     print("   Começa com 7 especialistas e CRIA NOVOS conforme aprende!")
     print("="*80)
     
-    # Inicializar banco
     init_db()
     
-    # CARREGAR RODADAS PASSADAS (com fallback)
     total_passadas = carregar_rodadas_passadas()
     
-    # Atualizar dados iniciais
     atualizar_dados_leves()
     atualizar_dados_pesados()
     
     print(f"\n📊 TOTAL DE RODADAS NO BANCO: {cache['leves']['total_rodadas']}")
     
-    # Inicializar sistema
+    if total_passadas == 0:
+        print("\n⚠️ Nenhuma rodada passada carregada!")
+        print("   O sistema vai aguardar novas rodadas via LATEST...")
+    else:
+        print(f"\n✅ {total_passadas} rodadas carregadas com sucesso!")
+    
     inicializar_sistema()
     
-    # Iniciar threads
     threading.Thread(target=loop_latest, daemon=True).start()
     threading.Thread(target=loop_websocket_fallback, daemon=True).start()
     threading.Thread(target=loop_api_fallback, daemon=True).start()
@@ -1075,7 +1057,6 @@ if __name__ == "__main__":
     threading.Thread(target=loop_pesado, daemon=True).start()
     threading.Thread(target=iniciar_websocket, daemon=True).start()
     
-    # Thread para atualizar dados periódicos
     def loop_atualizacao_leves():
         while True:
             time.sleep(30)
@@ -1084,7 +1065,7 @@ if __name__ == "__main__":
     
     print("\n" + "="*80)
     print("🚀 FLASK INICIANDO...")
-    print("🎯 3 FONTES ATIVAS + GERADOR DE TESTE")
+    print("🎯 3 FONTES ATIVAS: LATEST (0.2s) | WEBSOCKET | API NORMAL")
     print("🎯 LOOP PESADO ATIVO")
     print(f"🎯 Acesse: http://localhost:{PORT}")
     print("="*80)
