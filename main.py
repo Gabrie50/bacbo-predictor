@@ -1,4 +1,4 @@
-# main.py - VERSÃO COMPLETA COM 3 FONTES E LOOP PESADO
+# main.py - VERSÃO COMPLETA COM 3 FONTES, LOOP PESADO E CARGA HISTÓRICA
 # =============================================================================
 
 import os
@@ -286,6 +286,98 @@ def salvar_previsao(previsao, resultado_real, acertou, total_agentes, geracao):
         return False
 
 # =============================================================================
+# CARGA HISTÓRICA DE RODADAS PASSADAS
+# =============================================================================
+
+def carregar_rodadas_passadas():
+    """Carrega rodadas passadas da API normal"""
+    print("\n" + "="*80)
+    print("📥 CARREGANDO RODADAS PASSADAS DA API")
+    print("="*80)
+    
+    total_carregadas = 0
+    pagina = 0
+    max_paginas = 10  # Carrega até 10 páginas (1000 rodadas)
+    
+    while pagina < max_paginas:
+        try:
+            params = {
+                'page': pagina,
+                'size': 100,
+                'sort': 'data.settledAt,desc',
+                '_t': int(time.time() * 1000)
+            }
+            
+            print(f"📡 Carregando página {pagina}...", end=' ')
+            response = requests.get(API_URL, params=params, headers=HEADERS, timeout=15)
+            
+            if response.status_code != 200:
+                print(f"❌ Status {response.status_code}")
+                break
+            
+            dados = response.json()
+            if not dados or len(dados) == 0:
+                print("⚠️ Sem dados")
+                break
+            
+            novas = 0
+            for item in dados:
+                try:
+                    data = item.get('data', {})
+                    result = data.get('result', {})
+                    
+                    player_dice = result.get('playerDice', {})
+                    banker_dice = result.get('bankerDice', {})
+                    player_score = player_dice.get('first', 0) + player_dice.get('second', 0)
+                    banker_score = banker_dice.get('first', 0) + banker_dice.get('second', 0)
+                    
+                    outcome = result.get('outcome', '')
+                    if outcome == 'PlayerWon':
+                        resultado = 'PLAYER'
+                    elif outcome == 'BankerWon':
+                        resultado = 'BANKER'
+                    else:
+                        resultado = 'TIE'
+                    
+                    settled_at = data.get('settledAt', '')
+                    if settled_at:
+                        data_hora = datetime.fromisoformat(settled_at.replace('Z', '+00:00'))
+                    else:
+                        data_hora = datetime.now(timezone.utc)
+                    
+                    rodada = {
+                        'id': data.get('id'),
+                        'data_hora': data_hora,
+                        'player_score': player_score,
+                        'banker_score': banker_score,
+                        'resultado': resultado
+                    }
+                    
+                    if salvar_rodada(rodada, 'historico'):
+                        novas += 1
+                        total_carregadas += 1
+                        
+                except Exception as e:
+                    continue
+            
+            print(f"✅ +{novas} rodadas")
+            
+            if novas == 0:
+                break
+                
+            pagina += 1
+            time.sleep(0.5)
+            
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+            break
+    
+    print("="*80)
+    print(f"✅ TOTAL CARREGADO: {total_carregadas} rodadas")
+    print("="*80)
+    return total_carregadas
+
+# =============================================================================
 # 🔄 FUNÇÃO PARA ALTERNAR FONTE ATIVA
 # =============================================================================
 def alternar_fonte():
@@ -472,7 +564,7 @@ def iniciar_websocket():
     threading.Thread(target=run, daemon=True).start()
 
 # =============================================================================
-# 📡 FONTE 3: API NORMAL (CARGA HISTÓRICA)
+# 📡 FONTE 3: API NORMAL (FALLBACK)
 # =============================================================================
 
 def buscar_api_normal():
@@ -604,13 +696,18 @@ def atualizar_dados_leves():
         return
     try:
         cur = conn.cursor()
+        
+        # Total de rodadas
+        cur.execute('SELECT COUNT(*) FROM rodadas')
+        total = cur.fetchone()[0]
+        cache['leves']['total_rodadas'] = total
+        
+        # Últimas 50
         cur.execute('SELECT player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 50')
         rows = cur.fetchall()
         cache['leves']['ultimas_50'] = [{'player_score': r[0], 'banker_score': r[1], 'resultado': r[2]} for r in rows]
         
-        cur.execute('SELECT COUNT(*) FROM rodadas')
-        cache['leves']['total_rodadas'] = cur.fetchone()[0]
-        
+        # Últimas 20 para o frontend
         cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT 20')
         rows = cur.fetchall()
         ultimas = []
@@ -625,6 +722,7 @@ def atualizar_dados_leves():
                 'banker': row[2]
             })
         cache['leves']['ultimas_20'] = ultimas
+        cache['leves']['ultima_atualizacao'] = datetime.now(timezone.utc)
         
         cur.close()
         conn.close()
@@ -689,7 +787,7 @@ def processar_fila():
                     if salvar_rodada(rodada, fonte_ativa):
                         historico_buffer.append(rodada)
                         cache['ultimo_resultado_real'] = rodada['resultado']
-                        print(f"✅ SALVO: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Buffer: {len(historico_buffer)}")
+                        print(f"✅ SALVO: {rodada['player_score']} vs {rodada['banker_score']} - {rodada['resultado']} | Buffer: {len(historico_buffer)} | Total: {cache['leves']['total_rodadas']}")
                         
                         # =====================================================
                         # VERIFICAR PREVISÃO ANTERIOR
@@ -827,23 +925,31 @@ def api_tabela(limite):
     conn = get_db_connection()
     if not conn:
         return jsonify([])
-    cur = conn.cursor()
-    cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT %s', (limite,))
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
     
-    resultado = []
-    for row in rows:
-        brasilia = row[0].astimezone(timezone(timedelta(hours=-3)))
-        resultado.append({
-            'data': brasilia.strftime('%d/%m %H:%M:%S'),
-            'player': row[1],
-            'banker': row[2],
-            'resultado': row[3],
-            'cor': '🔴' if row[3] == 'BANKER' else '🔵' if row[3] == 'PLAYER' else '🟡'
-        })
-    return jsonify(resultado)
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT data_hora, player_score, banker_score, resultado FROM rodadas ORDER BY data_hora DESC LIMIT %s', (limite,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        resultado = []
+        for row in rows:
+            brasilia = row[0].astimezone(timezone(timedelta(hours=-3)))
+            resultado.append({
+                'data': brasilia.strftime('%d/%m %H:%M:%S'),
+                'player': row[1],
+                'banker': row[2],
+                'resultado': row[3],
+                'cor': '🔴' if row[3] == 'BANKER' else '🔵' if row[3] == 'PLAYER' else '🟡'
+            })
+        
+        print(f"📊 API /api/tabela/{limite}: retornou {len(resultado)} rodadas")
+        return jsonify(resultado)
+        
+    except Exception as e:
+        print(f"❌ Erro em api_tabela: {e}")
+        return jsonify([])
 
 @app.route('/api/aprendizado')
 def api_aprendizado():
@@ -894,11 +1000,20 @@ if __name__ == "__main__":
     # Inicializar banco
     init_db()
     
+    # CARREGAR RODADAS PASSADAS
+    total_passadas = carregar_rodadas_passadas()
+    
     # Atualizar dados iniciais
     atualizar_dados_leves()
     atualizar_dados_pesados()
     
     print(f"\n📊 TOTAL DE RODADAS NO BANCO: {cache['leves']['total_rodadas']}")
+    
+    if total_passadas == 0:
+        print("\n⚠️ Nenhuma rodada passada carregada!")
+        print("   O sistema vai aguardar novas rodadas via LATEST...")
+    else:
+        print(f"\n✅ {total_passadas} rodadas carregadas com sucesso!")
     
     # Inicializar sistema
     inicializar_sistema()
