@@ -38,16 +38,16 @@ class AgenteEspecialista:
         # DNA do especialista (para crossover e mutação)
         self.dna = {
             'confianca_base': peso_inicial,
-            'tendencia': random.uniform(-0.2, 0.2),  # Tendência a BANKER ou PLAYER
-            'paciencia': random.uniform(0.5, 1.5),   # Quanto tempo espera antes de agir
-            'agressividade': random.uniform(0.3, 1.2)  # Quão agressivo nas previsões
+            'tendencia': random.uniform(-0.2, 0.2),
+            'paciencia': random.uniform(0.5, 1.5),
+            'agressividade': random.uniform(0.3, 1.2)
         }
         
         # Histórico de performance
         self.historico_precisao = deque(maxlen=100)
         self.ultimos_resultados = deque(maxlen=20)
         
-        # Especialidade aprendida (pode mudar com evolução)
+        # Especialidade aprendida
         self.especialidade_aprendida = None
         
         print(f"   🧬 NOVO ESPECIALISTA: {nome} (padrão: {padrao_nome}, peso: {peso_inicial:.2f}, geração: {geracao})")
@@ -67,15 +67,12 @@ class AgenteEspecialista:
         """Registra resultado e ajusta peso"""
         if acertou:
             self.acertos += 1
-            # Aumenta peso se acertou
             self.peso_aprendido = min(2.5, self.peso_aprendido * 1.03)
-            # Ajusta DNA baseado no sucesso
             if resultado_real:
                 self.dna['tendencia'] = max(-0.3, min(0.3, 
                     self.dna['tendencia'] + (0.02 if resultado_real == 'BANKER' else -0.02)))
         else:
             self.erros += 1
-            # Diminui peso se errou
             self.peso_aprendido = max(0.3, self.peso_aprendido * 0.97)
         
         self.total_usos += 1
@@ -134,20 +131,16 @@ class AgenteEspecialista:
         """Cria um novo especialista a partir de dois pais (crossover)"""
         nome = f"Filho_{pai.nome[:8]}_{mae.nome[:8]}_{geracao}"
         padrao = f"crossover_{pai.padrao_nome[:10]}_{mae.padrao_nome[:10]}"
-        
-        # Peso médio dos pais
         peso = (pai.peso_aprendido + mae.peso_aprendido) / 2
         
         filho = cls(nome, padrao, peso, geracao)
         
-        # Crossover do DNA
         for key in pai.dna:
             if random.random() < 0.5:
                 filho.dna[key] = pai.dna[key]
             else:
                 filho.dna[key] = mae.dna[key]
         
-        # Mutação
         if random.random() < 0.3:
             mutacao_key = random.choice(list(filho.dna.keys()))
             filho.dna[mutacao_key] += random.uniform(-0.1, 0.1)
@@ -160,14 +153,10 @@ class AgenteEspecialista:
         """Cria um mutante a partir de um pai"""
         nome = f"Mutante_{pai.nome[:8]}_{geracao}"
         padrao = f"mutacao_{pai.padrao_nome[:15]}"
-        
-        # Pequena variação no peso
         peso = pai.peso_aprendido * random.uniform(0.8, 1.2)
         peso = max(0.3, min(2.5, peso))
         
         mutante = cls(nome, padrao, peso, geracao)
-        
-        # Copiar DNA e mutar
         mutante.dna = pai.dna.copy()
         mutacao_key = random.choice(list(mutante.dna.keys()))
         mutante.dna[mutacao_key] += random.uniform(-0.2, 0.2)
@@ -188,23 +177,20 @@ class EnsembleEvolutivo:
         self.mapa_mental = MapaMental()
         self.arquivo_estado = arquivo_estado
         
-        # Estatísticas do ensemble
         self.total_previsoes = 0
         self.acertos = 0
         self.erros = 0
         self.geracao_atual = 0
         self.historico_votacoes = deque(maxlen=200)
         
-        # Controle de criação de novos agentes
         self.total_agentes_criados = 0
         self.ultima_criacao = datetime.now()
         self.criacoes_por_erro = 0
         
-        # Métricas de evolução
         self.historico_populacao = deque(maxlen=50)
         self.melhores_por_geracao = []
         
-        # Criar especialistas iniciais (BASE)
+        # Criar especialistas iniciais
         self._criar_especialistas_base()
         
         # Carregar estado salvo
@@ -216,8 +202,7 @@ class EnsembleEvolutivo:
         print(f"   📈 Precisão atual: {(self.acertos/self.total_previsoes*100) if self.total_previsoes > 0 else 0:.1f}%")
     
     def _criar_especialistas_base(self):
-        """Cria os 7 especialistas base (sua descoberta inicial)"""
-        
+        """Cria os 7 especialistas base"""
         especialistas_base = [
             ('streak_3_reversao', 0.80, 'Reversão após 3+ streaks', 'streak'),
             ('delta_correcao', 0.85, 'Correção de delta', 'delta'),
@@ -234,39 +219,28 @@ class EnsembleEvolutivo:
             print(f"   ✅ {desc}: peso {peso}")
     
     def _criar_novo_especialista_aprendido(self, contexto: List[str], previsao: str, acertou: bool):
-        """
-        Cria um novo especialista baseado em um padrão aprendido
-        Isso acontece quando o ensemble aprende um novo padrão
-        """
+        """Cria um novo especialista baseado em um padrão aprendido"""
         self.total_agentes_criados += 1
         self.geracao_atual += 1
         
-        # Criar nome baseado no contexto
         contexto_str = '_'.join(contexto[:3]) if contexto else 'novo'
         nome = f"Aprendido_{contexto_str}_{self.total_agentes_criados}"
         padrao = f"aprendido_{contexto_str}"
-        
-        # Peso baseado na confiança da previsão
         peso_base = 0.6 if acertou else 0.4
         
         novo_especialista = AgenteEspecialista(nome, padrao, peso_base, self.geracao_atual)
         novo_especialista.especialidade_aprendida = f"Contexto: {contexto_str}"
-        
         self.agentes[padrao] = novo_especialista
         
         print(f"\n🌟 NOVO ESPECIALISTA CRIADO: {nome}")
         print(f"   📊 Padrão: {padrao}")
         print(f"   🎯 Peso inicial: {peso_base:.2f}")
         print(f"   🧬 Geração: {self.geracao_atual}")
-        print(f"   🗺️ Contexto: {contexto_str}")
         
         return novo_especialista
     
     def _criar_especialista_por_crossover(self):
-        """
-        Cria um novo especialista por crossover dos melhores
-        """
-        # Pegar os melhores agentes
+        """Cria um novo especialista por crossover dos melhores"""
         melhores = sorted(
             [a for a in self.agentes.values() if a.total_usos > 20],
             key=lambda x: x.precisao,
@@ -285,7 +259,6 @@ class EnsembleEvolutivo:
         filho = AgenteEspecialista.criar_filho(pai, mae, self.geracao_atual)
         filho_nome = f"Crossover_{pai.nome[:6]}_{mae.nome[:6]}_{self.total_agentes_criados}"
         filho.nome = filho_nome
-        
         self.agentes[filho.padrao_nome] = filho
         
         print(f"\n🧬 NOVO ESPECIALISTA POR CROSSOVER: {filho_nome}")
@@ -295,10 +268,7 @@ class EnsembleEvolutivo:
         return filho
     
     def _criar_especialista_por_mutacao(self):
-        """
-        Cria um novo especialista por mutação de um bom agente
-        """
-        # Pegar agentes com boa precisão
+        """Cria um novo especialista por mutação"""
         bons = [a for a in self.agentes.values() if a.precisao > 0.6 and a.total_usos > 30]
         if not bons:
             return None
@@ -310,7 +280,6 @@ class EnsembleEvolutivo:
         mutante = AgenteEspecialista.criar_mutante(pai, self.geracao_atual)
         mutante_nome = f"Mutante_{pai.nome[:6]}_{self.total_agentes_criados}"
         mutante.nome = mutante_nome
-        
         self.agentes[mutante.padrao_nome] = mutante
         
         print(f"\n🧬 NOVO ESPECIALISTA POR MUTAÇÃO: {mutante_nome}")
@@ -319,40 +288,32 @@ class EnsembleEvolutivo:
         return mutante
     
     def _criar_especialista_anti_erro(self, erro_contexto: List[str], erro_previsao: str, erro_real: str):
-        """
-        Cria um especialista especializado em evitar um erro específico
-        """
+        """Cria um especialista especializado em evitar um erro específico"""
         self.total_agentes_criados += 1
         self.geracao_atual += 1
         
         contexto_str = '_'.join(erro_contexto[:3]) if erro_contexto else 'erro'
         nome = f"AntiErro_{contexto_str}_{self.total_agentes_criados}"
         padrao = f"anti_erro_{contexto_str}"
-        
-        # Peso maior para evitar o erro
         peso_base = 0.7
         
         anti_erro = AgenteEspecialista(nome, padrao, peso_base, self.geracao_atual)
         anti_erro.especialidade_aprendida = f"Evitar {erro_previsao} quando {contexto_str}"
         
-        # Configurar DNA para evitar o erro
         if erro_real == 'BANKER':
-            anti_erro.dna['tendencia'] = 0.2  # Tendência a BANKER
+            anti_erro.dna['tendencia'] = 0.2
         else:
-            anti_erro.dna['tendencia'] = -0.2  # Tendência a PLAYER
+            anti_erro.dna['tendencia'] = -0.2
         
         self.agentes[padrao] = anti_erro
         
         print(f"\n⚠️ NOVO ESPECIALISTA ANTI-ERRO: {nome}")
         print(f"   🎯 Especializado em evitar: {erro_previsao} → {erro_real}")
-        print(f"   🗺️ Contexto: {contexto_str}")
         
         return anti_erro
     
     def _limpar_agentes_fracos(self):
-        """
-        Remove agentes com baixa performance para manter o ensemble eficiente
-        """
+        """Remove agentes com baixa performance"""
         agentes_fracos = []
         for nome, agente in self.agentes.items():
             if agente.total_usos > 50 and agente.precisao < 0.45:
@@ -360,10 +321,7 @@ class EnsembleEvolutivo:
             elif agente.total_usos > 100 and agente.precisao < 0.5:
                 agentes_fracos.append((nome, agente.precisao))
         
-        # Ordenar por pior precisão
         agentes_fracos.sort(key=lambda x: x[1])
-        
-        # Remover os 20% piores, mas manter pelo menos 5 agentes
         remover = min(len(agentes_fracos) // 5, len(self.agentes) - 5)
         
         for i in range(remover):
@@ -375,29 +333,22 @@ class EnsembleEvolutivo:
         return remover
     
     def _evoluir_ensemble(self):
-        """
-        Evolui o ensemble: cria novos agentes e remove fracos
-        Chamado periodicamente
-        """
+        """Evolui o ensemble"""
         print(f"\n🧬 EVOLUINDO ENSEMBLE - Geração {self.geracao_atual}")
         print(f"   👥 População atual: {len(self.agentes)} especialistas")
         
-        # Remover agentes fracos
         removidos = self._limpar_agentes_fracos()
         if removidos > 0:
             print(f"   🗑️ Removidos {removidos} agentes fracos")
         
-        # Criar novos agentes por crossover (se tiver agentes suficientes)
         if len(self.agentes) >= 4:
             novos_crossover = min(2, len(self.agentes) // 4)
             for _ in range(novos_crossover):
                 self._criar_especialista_por_crossover()
         
-        # Criar novos agentes por mutação (sempre)
         if len(self.agentes) > 5:
             self._criar_especialista_por_mutacao()
         
-        # Registrar histórico
         self.historico_populacao.append({
             'geracao': self.geracao_atual,
             'total_agentes': len(self.agentes),
@@ -407,24 +358,14 @@ class EnsembleEvolutivo:
         
         print(f"   📊 Nova população: {len(self.agentes)} especialistas")
         print(f"   📈 Precisão média: {self.calcular_precisao_media()*100:.1f}%")
-        print(f"   🏆 Melhor precisão: {self.calcular_melhor_precisao()*100:.1f}%")
     
     def prever(self, historico: List[dict]) -> dict:
-        """
-        Previsão final do ENSEMBLE EVOLUTIVO
-        """
+        """Previsão final do ENSEMBLE EVOLUTIVO"""
         if len(historico) < 30:
-            return {
-                'previsao': 'AGUARDANDO',
-                'confianca': 0,
-                'modo': 'INICIALIZACAO',
-                'estrategias': []
-            }
+            return {'previsao': 'AGUARDANDO', 'confianca': 0, 'modo': 'INICIALIZACAO', 'estrategias': []}
         
-        # 1. Detectar padrões no histórico
         padroes_detectados = self.indicadores.detectar_padroes(historico)
         
-        # 2. Coletar votos de TODOS os especialistas
         votos = {'BANKER': 0.0, 'PLAYER': 0.0, 'TIE': 0.0}
         votos_detalhados = []
         
@@ -434,7 +375,6 @@ class EnsembleEvolutivo:
             if padrao_nome in self.agentes:
                 especialista = self.agentes[padrao_nome]
                 peso_voto = especialista.peso_efetivo * (padrao_info['confianca'] / 100)
-                
                 votos[padrao_info['previsao']] += peso_voto
                 votos_detalhados.append({
                     'agente': especialista.nome,
@@ -442,27 +382,21 @@ class EnsembleEvolutivo:
                     'previsao': padrao_info['previsao'],
                     'confianca': padrao_info['confianca'],
                     'peso': round(especialista.peso_efetivo, 3),
-                    'detalhes': padrao_info.get('detalhes', ''),
                     'geracao': especialista.geracao
                 })
         
-        # 3. Votos de TODOS os agentes aprendidos (não apenas padrões base)
+        # Votos dos agentes aprendidos
         for nome, agente in self.agentes.items():
             if agente.padrao_nome not in [p['nome'] for p in padroes_detectados]:
-                # Agentes aprendidos podem votar baseado em seu DNA
-                # Eles têm uma "opinião" baseada em sua especialidade
-                if agente.total_usos > 10:  # Só votam se tiverem experiência
+                if agente.total_usos > 10:
                     confianca_agente = agente.precisao * 0.7 + 0.3
                     tendencia = agente.dna['tendencia']
-                    
-                    # Decisão baseada no DNA
                     if tendencia > 0.1:
                         previsao = 'BANKER'
                     elif tendencia < -0.1:
                         previsao = 'PLAYER'
                     else:
                         previsao = random.choice(['BANKER', 'PLAYER'])
-                    
                     peso_voto = agente.peso_efetivo * confianca_agente * 0.5
                     votos[previsao] += peso_voto
                     votos_detalhados.append({
@@ -474,7 +408,7 @@ class EnsembleEvolutivo:
                         'geracao': agente.geracao
                     })
         
-        # 4. Consultar mapa mental
+        # Consultar mapa mental
         contexto = [r.get('resultado') for r in historico[:10] if r.get('resultado') != 'TIE'][:5]
         memorias = self.mapa_mental.consultar(contexto, limite=5)
         
@@ -489,13 +423,11 @@ class EnsembleEvolutivo:
                 'peso': round(memoria.peso, 3)
             })
         
-        # 5. Decisão final
         total_votos = sum(votos.values())
         if total_votos > 0:
             previsao_final = max(votos, key=votos.get)
             confianca = (votos[previsao_final] / total_votos) * 100
         else:
-            # Fallback
             ultimos = [r.get('resultado') for r in historico[:20] if r.get('resultado') != 'TIE']
             if ultimos:
                 banker = ultimos.count('BANKER')
@@ -506,15 +438,12 @@ class EnsembleEvolutivo:
                 previsao_final = random.choice(['BANKER', 'PLAYER'])
                 confianca = 50
         
-        # Guardar para aprendizado
         self._ultimo_contexto = contexto
         self._ultimos_padroes = padroes_detectados
         self._ultimas_memorias = memorias
         self._ultima_previsao = previsao_final
         self._ultimos_votos = votos_detalhados
-        self._ultimo_historico = historico
         
-        # Preparar estratégias para o frontend
         estrategias = []
         for v in votos_detalhados[:10]:
             if v['agente'] != 'MEMORIA':
@@ -534,23 +463,19 @@ class EnsembleEvolutivo:
         }
     
     def aprender(self, resultado_real: str):
-        """
-        ENSEMBLE aprende com o resultado real
-        Pode criar novos especialistas baseado no erro
-        """
+        """ENSEMBLE aprende com o resultado real"""
         if not hasattr(self, '_ultima_previsao'):
             return False
         
         acertou = (self._ultima_previsao == resultado_real)
         
-        # Atualizar estatísticas
         self.total_previsoes += 1
         if acertou:
             self.acertos += 1
         else:
             self.erros += 1
         
-        # 1. Atualizar especialistas que participaram
+        # Atualizar especialistas
         for padrao_info in getattr(self, '_ultimos_padroes', []):
             padrao_nome = padrao_info['nome']
             if padrao_nome in self.agentes:
@@ -558,81 +483,48 @@ class EnsembleEvolutivo:
                 acertou_padrao = (padrao_info['previsao'] == resultado_real)
                 especialista.registrar_resultado(acertou_padrao, resultado_real)
         
-        # 2. Atualizar TODOS os agentes aprendidos (aprendizado em lote)
-        for nome, agente in self.agentes.items():
-            if agente.total_usos > 0:
-                # Cada agente aprende baseado no seu DNA
-                tendencia = agente.dna['tendencia']
-                if tendencia > 0.1:
-                    previsao_agente = 'BANKER'
-                elif tendencia < -0.1:
-                    previsao_agente = 'PLAYER'
-                else:
-                    previsao_agente = random.choice(['BANKER', 'PLAYER'])
-                
-                acertou_agente = (previsao_agente == resultado_real)
-                agente.registrar_resultado(acertou_agente, resultado_real)
-        
-        # 3. Atualizar mapa mental
+        # Atualizar mapa mental
         for memoria in getattr(self, '_ultimas_memorias', []):
             acertou_memoria = (memoria.previsao == resultado_real)
             self.mapa_mental.atualizar_memoria(memoria.id, acertou_memoria)
         
-        # 4. CRIAR NOVOS ESPECIALISTAS quando aprender novos padrões
-        if acertou:
-            # Acertou: pode criar um novo especialista baseado no contexto (se for padrão novo)
+        # Criar novos especialistas
+        if acertou and hasattr(self, '_ultimo_contexto'):
             contexto_str = '_'.join(self._ultimo_contexto[:3]) if self._ultimo_contexto else 'novo'
             padrao_novo = f"aprendido_{contexto_str}"
-            
             if padrao_novo not in self.agentes:
-                self._criar_novo_especialista_aprendido(
-                    self._ultimo_contexto,
-                    self._ultima_previsao,
-                    acertou
-                )
-        
-        else:
-            # ERROU: criar especialista anti-erro!
+                self._criar_novo_especialista_aprendido(self._ultimo_contexto, self._ultima_previsao, acertou)
+        elif not acertou:
             self.criacoes_por_erro += 1
-            self._criar_especialista_anti_erro(
-                self._ultimo_contexto,
-                self._ultima_previsao,
-                resultado_real
-            )
+            self._criar_especialista_anti_erro(self._ultimo_contexto, self._ultima_previsao, resultado_real)
         
-        # 5. Evoluir ensemble periodicamente
+        # Evoluir ensemble periodicamente
         if self.total_previsoes % 50 == 0:
             self._evoluir_ensemble()
         
-        # Salvar automaticamente
         if self.total_previsoes % 20 == 0:
             self._salvar_auto()
         
         return acertou
     
     def calcular_precisao_media(self) -> float:
-        """Calcula precisão média de todos os agentes"""
         if not self.agentes:
             return 0
         precisoes = [a.precisao for a in self.agentes.values() if a.total_usos > 10]
         return sum(precisoes) / len(precisoes) if precisoes else 0
     
     def calcular_melhor_precisao(self) -> float:
-        """Retorna a melhor precisão entre os agentes"""
         if not self.agentes:
             return 0
         return max([a.precisao for a in self.agentes.values() if a.total_usos > 10] or [0])
     
     def get_stats(self) -> dict:
-        """Retorna estatísticas do ensemble evolutivo"""
         precisao = (self.acertos / self.total_previsoes * 100) if self.total_previsoes > 0 else 0
         
         especialistas_stats = []
         for nome, agente in self.agentes.items():
-            stats = agente.get_stats()
-            especialistas_stats.append(stats)
+            especialistas_stats.append(agente.get_stats())
         
-        # Estatísticas de evolução
         evolucao_stats = {
             'total_agentes': len(self.agentes),
             'geracao_atual': self.geracao_atual,
@@ -655,7 +547,6 @@ class EnsembleEvolutivo:
         }
     
     def _salvar_auto(self):
-        """Salva estado do ensemble evolutivo"""
         try:
             estado = {
                 'agentes': {nome: agente.to_dict() for nome, agente in self.agentes.items()},
@@ -673,7 +564,6 @@ class EnsembleEvolutivo:
             print(f"⚠️ Erro ao salvar ensemble: {e}")
     
     def _carregar_auto(self):
-        """Carrega estado do ensemble evolutivo"""
         try:
             if os.path.exists(self.arquivo_estado):
                 with open(self.arquivo_estado, 'rb') as f:
@@ -695,3 +585,9 @@ class EnsembleEvolutivo:
                 print(f"   🧬 Total criados: {self.total_agentes_criados}")
         except Exception as e:
             print(f"⚠️ Erro ao carregar ensemble: {e}")
+
+
+# =============================================================================
+# ALIAS PARA COMPATIBILIDADE COM CÓDIGO EXISTENTE
+# =============================================================================
+EnsembleAgentes = EnsembleEvolutivo
